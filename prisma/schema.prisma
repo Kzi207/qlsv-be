@@ -1,0 +1,157 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          Int      @id @default(autoincrement())
+  username    String   @unique
+  password    String
+  name        String
+  email       String?
+  phone       String?
+  class_id    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  role        Role     @default(STUDENT)
+  studentId   Int?     @unique
+  student     Student? @relation(fields: [studentId], references: [id])
+  assignments BchAssignment[]
+}
+
+model Class {
+  name               String              @id
+  active_semester_id String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  students           Student[]
+  attendanceSessions AttendanceSession[]
+  activeSemester     Semester?           @relation("ActiveClass", fields: [active_semester_id], references: [name])
+  availableSemesters Semester[]          @relation("SemesterScope")
+}
+
+model Student {
+  id                Int                      @id @default(autoincrement())
+  name              String
+  student_code      String                   @unique
+  email             String                   @unique
+  class_id          String
+  order_number      Int?
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+  attendances       Attendance[]
+  attendanceProfile StudentAttendanceProfile?
+  class             Class                    @relation(fields: [class_id], references: [name])
+  trainingScores    TrainingScore[]
+  user              User?
+}
+
+model BchAssignment {
+  id        Int      @id @default(autoincrement())
+  bchUserId Int
+  classId   String
+  fromOrder Int
+  toOrder   Int
+  createdAt DateTime @default(now())
+  bchUser   User     @relation(fields: [bchUserId], references: [id])
+}
+
+model Semester {
+  name           String          @id
+  startDate      DateTime?
+  endDate        DateTime?
+  isGlobal       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  trainingScores TrainingScore[]
+  activeInClasses Class[]        @relation("ActiveClass")
+  scopeClasses    Class[]        @relation("SemesterScope")
+}
+
+model TrainingScore {
+  id              Int      @id @default(autoincrement())
+  student_id      Int
+  y_thuc          Int
+  hoat_dong       Int
+  ky_luat         Int
+  total           Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  details         Json?
+  admin_details   Json?
+  status          String   @default("APPROVED")
+  admin_hoat_dong Int?
+  admin_ky_luat   Int?
+  admin_notes     String?
+  admin_total     Int?
+  admin_y_thuc    Int?
+  semester_id     String
+  semester        Semester @relation(fields: [semester_id], references: [name])
+  student         Student  @relation(fields: [student_id], references: [id])
+
+  @@unique([student_id, semester_id])
+}
+
+model Attendance {
+  id               Int                @id @default(autoincrement())
+  student_id       Int
+  date             DateTime           @default(now())
+  status           String
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  deviceInfo       String?
+  ipAddress        String?
+  latitude         Float?
+  longitude        Float?
+  baselineCreated  Boolean            @default(false)
+  verifiedIp       Boolean?
+  verifiedLocation Boolean?
+  profileDistance  Float?
+  sessionDistance  Float?
+  session_id       Int?
+  session          AttendanceSession? @relation(fields: [session_id], references: [id], onDelete: Cascade)
+  student          Student            @relation(fields: [student_id], references: [id], onDelete: Cascade)
+}
+
+model AttendanceSession {
+  id          Int          @id @default(autoincrement())
+  title       String
+  subject     String       @default("")
+  class_id    String?
+  qrToken     String       @unique
+  lat         Float
+  lng         Float
+  radius      Float
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  endedAt     DateTime?
+  sessionDate DateTime     @default(now())
+  attendances Attendance[]
+  class       Class?       @relation(fields: [class_id], references: [name], onDelete: Cascade)
+}
+
+model StudentAttendanceProfile {
+  id                    Int      @id @default(autoincrement())
+  student_id            Int      @unique
+  firstIpAddress        String
+  firstLatitude         Float
+  firstLongitude        Float
+  firstCheckInAt        DateTime @default(now())
+  lastIpAddress         String?
+  lastLatitude          Float?
+  lastLongitude         Float?
+  lastCheckInAt         DateTime?
+  totalVerifiedCheckIns Int      @default(0)
+  student               Student  @relation(fields: [student_id], references: [id], onDelete: Cascade)
+}
+
+enum Role {
+  ADMIN
+  BCH
+  STUDENT
+}
