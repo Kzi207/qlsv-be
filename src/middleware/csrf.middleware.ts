@@ -2,15 +2,17 @@ import type { NextFunction, Request, Response } from 'express';
 import { CSRF_COOKIE_NAME, getCookieValue } from '../utils/security.js';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
-const EXCLUDED_PATHS = new Set(['/api/auth/login']);
+const EXCLUDED_PATHS = new Set(['/api/auth/login', '/api/auth/logout']);
 
 export const csrfMiddleware = (req: Request, res: Response, next: NextFunction) => {
   if (SAFE_METHODS.has(req.method)) {
     return next();
   }
 
-  // Normalize path by removing trailing slash for comparison
-  const path = req.path.replace(/\/$/, '') || '/';
+  // Use originalUrl for reliable matching across proxy/router setups,
+  // fall back to req.path for sub-app scenarios
+  const rawPath = (req.originalUrl || req.path).split('?')[0] ?? '';
+  const path = rawPath.replace(/\/$/, '') || '/';
   if (EXCLUDED_PATHS.has(path) || path.startsWith('/api/events/public/')) {
     return next();
   }
