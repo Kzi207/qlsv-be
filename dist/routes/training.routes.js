@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import { getTrainingScoreByStudent, getTrainingScores, getTrainingScoreById, approveTrainingScore, createTrainingScore, getSubmissionStatus, exportTrainingScoresExcel, submitStudentCustomEvidence, getStudentCustomEvidence, getAllCustomEvidence, reviewCustomEvidence, } from '../controllers/training.controller';
-import { getEvidenceFile, uploadEvidence } from '../controllers/upload.controller';
-import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
+import { getTrainingScoreByStudent, getTrainingScores, getTrainingScoreById, approveTrainingScore, createTrainingScore, getSubmissionStatus, exportTrainingScoresExcel, submitStudentCustomEvidence, getStudentCustomEvidence, getAllCustomEvidence, reviewCustomEvidence, } from '../controllers/training.controller.js';
+import { getEvidenceFile, uploadEvidence } from '../controllers/upload.controller.js';
+import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware.js';
 const router = Router();
 router.use(authMiddleware);
 router.get('/export', roleMiddleware(['ADMIN']), exportTrainingScoresExcel);

@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import type { AuthRequest } from '../types';
+import type { AuthRequest } from '../types/index.js';
 export declare const createOrUpdateTrainingScore: (req: Request, res: Response) => Promise<Response<any, Record<string, any>> | undefined>;
 export declare const getTrainingScoreByStudent: (req: Request, res: Response) => Promise<void>;
 export declare const createTrainingScore: (req: AuthRequest, res: Response) => Promise<Response<any, Record<string, any>> | undefined>;

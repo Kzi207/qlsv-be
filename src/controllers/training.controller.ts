@@ -1,13 +1,13 @@
 import type { Request, Response } from 'express';
-import prisma from '../utils/prisma';
-import type { AuthRequest } from '../types';
-import { sendApprovalEmail, sendSubmissionReceivedEmail, type CriterionReportMeta } from '../utils/training-email';
+import prisma from '../utils/prisma.js';
+import type { AuthRequest } from '../types/index.js';
+import { sendApprovalEmail, sendSubmissionReceivedEmail, type CriterionReportMeta } from '../utils/training-email.js';
 import {
   getSemesterClosedMessage,
   getSemesterSubmissionStatus,
   getSemesterWithScope,
   normalizeSemesterName,
-} from '../utils/semester';
+} from '../utils/semester.js';
 
 const parseDetails = (raw: unknown): Record<string, any> => {
   let parsed: unknown = raw;

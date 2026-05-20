@@ -1,9 +1,9 @@
 import { Request, Response } from 'express';
 import { Prisma } from '@prisma/client';
 import crypto from 'crypto';
-import prisma from '../utils/prisma';
-import { normalizeSemesterName } from '../utils/semester';
-import type { AuthRequest } from '../types';
+import prisma from '../utils/prisma.js';
+import { normalizeSemesterName } from '../utils/semester.js';
+import type { AuthRequest } from '../types/index.js';
 
 interface QrAwardActivity {
   source: 'QR_ATTENDANCE';

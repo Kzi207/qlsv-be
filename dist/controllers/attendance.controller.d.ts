@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import type { AuthRequest } from '../types';
+import type { AuthRequest } from '../types/index.js';
 export declare const checkAttendance: (req: Request, res: Response) => Promise<Response<any, Record<string, any>>>;
 export declare const getAttendanceByDate: (req: Request, res: Response) => Promise<Response<any, Record<string, any>>>;
 export declare const getAttendanceByStudent: (req: Request, res: Response) => Promise<Response<any, Record<string, any>>>;
@@ -11,4 +11,5 @@ export declare const getSessionAttendees: (req: AuthRequest, res: Response) => P
 export declare const getSessionSummary: (req: AuthRequest, res: Response) => Promise<Response<any, Record<string, any>>>;
 export declare const endAttendanceSession: (req: AuthRequest, res: Response) => Promise<Response<any, Record<string, any>>>;
 export declare const manualSessionCheckIn: (req: AuthRequest, res: Response) => Promise<Response<any, Record<string, any>>>;
+export declare const exportSessionAttendanceExcel: (req: AuthRequest, res: Response) => Promise<Response<any, Record<string, any>> | undefined>;
 //# sourceMappingURL=attendance.controller.d.ts.map

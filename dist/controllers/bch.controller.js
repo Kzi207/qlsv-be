@@ -1,4 +1,4 @@
-import prisma from '../utils/prisma';
+import prisma from '../utils/prisma.js';
 import bcrypt from 'bcryptjs';
 export const createBchAccount = async (req, res) => {
     const { username, password, name, email, phone, class_id } = req.body;

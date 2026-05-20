@@ -1,11 +1,11 @@
 import type { Response } from 'express';
-import type { AuthRequest } from '../types';
-import prisma from '../utils/prisma';
-import { normalizeSemesterName, parseSemesterDateInput } from '../utils/semester';
+import type { AuthRequest } from '../types/index.js';
+import prisma from '../utils/prisma.js';
+import { normalizeSemesterName, parseSemesterDateInput } from '../utils/semester.js';
 import fs from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
-import { deleteObjectFromR2 } from '../utils/r2';
+import { deleteObjectFromR2 } from '../utils/r2.js';
 
 const mapSemesterPayload = (semester: any) => ({
   name: semester.name,

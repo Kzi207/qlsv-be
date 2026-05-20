@@ -7,8 +7,8 @@ import {
   assignStudents, 
   getAssignments,
   exportBchAssignments 
-} from '../controllers/bch.controller';
-import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
+} from '../controllers/bch.controller.js';
+import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware.js';
 
 const router = Router();
 

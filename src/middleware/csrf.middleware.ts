@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
-import { CSRF_COOKIE_NAME, getCookieValue } from '../utils/security';
+import { CSRF_COOKIE_NAME, getCookieValue } from '../utils/security.js';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const EXCLUDED_PATHS = new Set(['/api/auth/login']);

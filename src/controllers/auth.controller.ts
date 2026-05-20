@@ -1,10 +1,10 @@
 import type { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import prisma from '../utils/prisma';
-import type { AuthRequest } from '../types';
-import { clearAuthCookies, createCsrfToken, setAuthCookies, setCsrfCookie, getCookieValue, CSRF_COOKIE_NAME } from '../utils/security';
-import { getJwtSecret } from '../utils/env';
+import prisma from '../utils/prisma.js';
+import type { AuthRequest } from '../types/index.js';
+import { clearAuthCookies, createCsrfToken, setAuthCookies, setCsrfCookie, getCookieValue, CSRF_COOKIE_NAME } from '../utils/security.js';
+import { getJwtSecret } from '../utils/env.js';
 
 const DUMMY_PASSWORD_HASH = bcrypt.hashSync('invalid-password-for-timing-defense', 10);
 

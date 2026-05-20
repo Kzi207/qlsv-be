@@ -1,8 +1,8 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import prisma from '../utils/prisma';
-import { clearAuthCookies, createCsrfToken, setAuthCookies, setCsrfCookie, getCookieValue, CSRF_COOKIE_NAME } from '../utils/security';
-import { getJwtSecret } from '../utils/env';
+import prisma from '../utils/prisma.js';
+import { clearAuthCookies, createCsrfToken, setAuthCookies, setCsrfCookie, getCookieValue, CSRF_COOKIE_NAME } from '../utils/security.js';
+import { getJwtSecret } from '../utils/env.js';
 const DUMMY_PASSWORD_HASH = bcrypt.hashSync('invalid-password-for-timing-defense', 10);
 const applyNoStoreHeaders = (res) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');

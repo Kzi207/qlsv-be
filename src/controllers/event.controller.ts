@@ -1,6 +1,6 @@
 ﻿import type { Request, Response } from 'express';
 import { Prisma } from '@prisma/client';
-import prisma from '../utils/prisma';
+import prisma from '../utils/prisma.js';
 import bcrypt from 'bcryptjs';
 
 export const createEvent = async (req: Request, res: Response) => {

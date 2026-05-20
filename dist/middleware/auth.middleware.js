@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
-import { AUTH_COOKIE_NAME, getCookieValue } from '../utils/security';
-import { getJwtSecret } from '../utils/env';
+import { AUTH_COOKIE_NAME, getCookieValue } from '../utils/security.js';
+import { getJwtSecret } from '../utils/env.js';
 const getTokenFromAuthorizationHeader = (authorizationHeader) => {
     const headerValue = String(authorizationHeader || '').trim();
     if (!headerValue)

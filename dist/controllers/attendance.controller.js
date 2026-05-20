@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 import crypto from 'crypto';
-import prisma from '../utils/prisma';
-import { normalizeSemesterName } from '../utils/semester';
+import prisma from '../utils/prisma.js';
+import { normalizeSemesterName } from '../utils/semester.js';
 const EARTH_RADIUS_METERS = 6371e3;
 const criterionIdRegex = /^\d+\.\d+$/;
 const sectionIdRegex = /^sec-[1-5]$/i;
@@ -1216,6 +1216,97 @@ export const manualSessionCheckIn = async (req, res) => {
         }
         console.error('manualSessionCheckIn error:', error);
         return res.status(500).json({ message: 'Server error' });
+    }
+};
+export const exportSessionAttendanceExcel = async (req, res) => {
+    const { sessionId } = req.params;
+    const numericSessionId = Number(sessionId);
+    if (!Number.isFinite(numericSessionId) || numericSessionId <= 0) {
+        return res.status(400).json({ message: 'Session ID khong hop le' });
+    }
+    try {
+        const session = await prisma.attendanceSession.findUnique({
+            where: { id: numericSessionId },
+            include: { class: true },
+        });
+        if (!session) {
+            return res.status(404).json({ message: 'Khong tim thay phien diem danh' });
+        }
+        const accessError = ensureSessionAccess(req, session.class_id);
+        if (accessError) {
+            return res.status(accessError.status).json({ message: accessError.message });
+        }
+        let students = [];
+        let attendances = [];
+        if (session.class_id) {
+            const [studentsRes, attendancesRes] = await Promise.all([
+                prisma.student.findMany({
+                    where: { class_id: session.class_id },
+                    orderBy: [{ order_number: 'asc' }, { name: 'asc' }],
+                }),
+                prisma.attendance.findMany({
+                    where: { session_id: numericSessionId },
+                    orderBy: [{ date: 'asc' }],
+                }),
+            ]);
+            students = studentsRes;
+            attendances = attendancesRes;
+        }
+        else {
+            attendances = await prisma.attendance.findMany({
+                where: { session_id: numericSessionId },
+                include: { student: true },
+                orderBy: [{ date: 'asc' }],
+            });
+            students = attendances.map((a) => a.student);
+        }
+        const attendanceMap = new Map(attendances.map((att) => [att.student_id, att]));
+        const ExcelJS = await import('exceljs');
+        const ExcelJSModule = (ExcelJS.default || ExcelJS);
+        const workbook = new ExcelJSModule.Workbook();
+        const sheet = workbook.addWorksheet('Danh Sách Điểm Danh');
+        sheet.columns = [
+            { header: 'STT', key: 'stt', width: 8 },
+            { header: 'MSSV', key: 'student_code', width: 15 },
+            { header: 'Họ và tên', key: 'name', width: 25 },
+            { header: 'Lớp', key: 'class_id', width: 15 },
+            { header: 'Trạng thái', key: 'status', width: 20 },
+            { header: 'Thời gian quét', key: 'time', width: 25 },
+            { header: 'IP Address', key: 'ipAddress', width: 15 },
+            { header: 'Xác minh vị trí', key: 'verifiedLocation', width: 20 },
+        ];
+        sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        sheet.getRow(1).fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FF4F46E5' },
+        };
+        students.forEach((student, index) => {
+            const attendance = attendanceMap.get(student.id);
+            sheet.addRow({
+                stt: index + 1,
+                student_code: student.student_code,
+                name: student.name,
+                class_id: student.class_id,
+                status: attendance ? 'Đã điểm danh' : 'Chưa điểm danh',
+                time: attendance ? new Date(attendance.date).toLocaleString('vi-VN') : '--',
+                ipAddress: attendance ? (attendance.ipAddress === 'manual' ? 'Thủ công' : attendance.ipAddress || 'N/A') : '--',
+                verifiedLocation: attendance
+                    ? attendance.verifiedLocation
+                        ? 'Hợp lệ'
+                        : 'Không hợp lệ'
+                    : '--',
+            });
+        });
+        const safeTitle = session.title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="diem-danh-${safeTitle || session.id}.xlsx"`);
+        await workbook.xlsx.write(res);
+        res.end();
+    }
+    catch (error) {
+        console.error('Error exporting attendance session:', error);
+        res.status(500).json({ message: 'Lỗi server khi xuất file excel' });
     }
 };
 //# sourceMappingURL=attendance.controller.js.map

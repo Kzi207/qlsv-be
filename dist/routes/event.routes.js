@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import { createEvent, getEvents, deleteEvent, getPublicEventDetails, registerEvent, getEventRegistrations, exportEventRegistrationsExcel, getPublicEvents, } from '../controllers/event.controller';
-import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
-import { createRateLimitMiddleware } from '../middleware/rate-limit.middleware';
+import { createEvent, getEvents, deleteEvent, getPublicEventDetails, registerEvent, getEventRegistrations, exportEventRegistrationsExcel, getPublicEvents, } from '../controllers/event.controller.js';
+import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware.js';
+import { createRateLimitMiddleware } from '../middleware/rate-limit.middleware.js';
 const router = Router();
 const publicRegisterRateLimiter = createRateLimitMiddleware({
     keyPrefix: 'event-public-register',

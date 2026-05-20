@@ -12,9 +12,9 @@ import {
   getStudentCustomEvidence,
   getAllCustomEvidence,
   reviewCustomEvidence,
-} from '../controllers/training.controller';
-import { getEvidenceFile, uploadEvidence } from '../controllers/upload.controller';
-import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
+} from '../controllers/training.controller.js';
+import { getEvidenceFile, uploadEvidence } from '../controllers/upload.controller.js';
+import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware.js';
 
 const router = Router();
 

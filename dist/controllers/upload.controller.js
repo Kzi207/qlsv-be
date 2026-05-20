@@ -2,9 +2,9 @@ import multer from 'multer';
 import fs from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
-import prisma from '../utils/prisma';
-import { getObjectFromR2, isR2Configured, uploadBufferToR2, validateR2Access } from '../utils/r2';
-import { getSemesterClosedMessage, getSemesterSubmissionStatus, getSemesterWithScope, normalizeSemesterName, } from '../utils/semester';
+import prisma from '../utils/prisma.js';
+import { getObjectFromR2, isR2Configured, uploadBufferToR2, validateR2Access } from '../utils/r2.js';
+import { getSemesterClosedMessage, getSemesterSubmissionStatus, getSemesterWithScope, normalizeSemesterName, } from '../utils/semester.js';
 const uploadRootDir = path.join(process.cwd(), 'uploads', 'evidence');
 if (!fs.existsSync(uploadRootDir))
     fs.mkdirSync(uploadRootDir, { recursive: true });

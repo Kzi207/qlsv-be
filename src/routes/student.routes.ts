@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { getStudents, createStudent, updateStudent, deleteStudent, createStudentAccount, deleteStudentAccount, importStudentsExcel, getStudentTemplate, deleteClassStudents, exportStudentAccounts, getStudentStats } from '../controllers/student.controller';
-import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
+import { getStudents, createStudent, updateStudent, deleteStudent, createStudentAccount, deleteStudentAccount, importStudentsExcel, getStudentTemplate, deleteClassStudents, exportStudentAccounts, getStudentStats } from '../controllers/student.controller.js';
+import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware.js';
 import multer from 'multer';
 import path from 'path';
 

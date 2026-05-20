@@ -1,6 +1,6 @@
-import prisma from '../utils/prisma';
-import { sendApprovalEmail, sendSubmissionReceivedEmail } from '../utils/training-email';
-import { getSemesterClosedMessage, getSemesterSubmissionStatus, getSemesterWithScope, normalizeSemesterName, } from '../utils/semester';
+import prisma from '../utils/prisma.js';
+import { sendApprovalEmail, sendSubmissionReceivedEmail } from '../utils/training-email.js';
+import { getSemesterClosedMessage, getSemesterSubmissionStatus, getSemesterWithScope, normalizeSemesterName, } from '../utils/semester.js';
 const parseDetails = (raw) => {
     let parsed = raw;
     for (let i = 0; i < 3; i += 1) {

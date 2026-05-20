@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { createBchAccount, getBchAccounts, updateBchAccount, deleteBchAccount, assignStudents, getAssignments, exportBchAssignments } from '../controllers/bch.controller';
-import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
+import { createBchAccount, getBchAccounts, updateBchAccount, deleteBchAccount, assignStudents, getAssignments, exportBchAssignments } from '../controllers/bch.controller.js';
+import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware.js';
 const router = Router();
 // Only ADMIN can manage BCH accounts and assignments
 router.use(authMiddleware);

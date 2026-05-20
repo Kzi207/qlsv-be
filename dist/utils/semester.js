@@ -1,4 +1,4 @@
-import prisma from './prisma';
+import prisma from './prisma.js';
 export const getSemesterClosedMessage = (status) => {
     switch (status.reason) {
         case 'NOT_FOUND':

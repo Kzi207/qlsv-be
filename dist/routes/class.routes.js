@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { getClasses, createClass, deleteClass, updateClass } from '../controllers/class.controller';
-import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
+import { getClasses, createClass, deleteClass, updateClass } from '../controllers/class.controller.js';
+import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware.js';
 const router = Router();
 router.get('/public', getClasses);
 router.get('/', authMiddleware, getClasses);

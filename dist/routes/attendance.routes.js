@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import { checkAttendance, getAttendanceByDate, getAttendanceByStudent, createAttendanceSession, getAttendanceSessions, getActiveSessions, qrCheckIn, getSessionAttendees, getSessionSummary, endAttendanceSession, manualSessionCheckIn, } from '../controllers/attendance.controller';
-import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
-import { createRateLimitMiddleware } from '../middleware/rate-limit.middleware';
+import { checkAttendance, getAttendanceByDate, getAttendanceByStudent, createAttendanceSession, getAttendanceSessions, getActiveSessions, qrCheckIn, getSessionAttendees, getSessionSummary, endAttendanceSession, manualSessionCheckIn, exportSessionAttendanceExcel, } from '../controllers/attendance.controller.js';
+import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware.js';
+import { createRateLimitMiddleware } from '../middleware/rate-limit.middleware.js';
 const router = Router();
 const activeSessionsRateLimiter = createRateLimitMiddleware({
     keyPrefix: 'attendance-active-sessions',
@@ -25,6 +25,7 @@ router.patch('/sessions/:sessionId/end', roleMiddleware(['ADMIN', 'BCH']), endAt
 router.post('/sessions/manual', roleMiddleware(['ADMIN', 'BCH']), manualSessionCheckIn);
 router.get('/sessions/:sessionId/attendees', roleMiddleware(['ADMIN', 'BCH']), getSessionAttendees);
 router.get('/sessions/:sessionId/summary', roleMiddleware(['ADMIN', 'BCH']), getSessionSummary);
+router.get('/sessions/:sessionId/export', roleMiddleware(['ADMIN', 'BCH']), exportSessionAttendanceExcel);
 router.post('/', roleMiddleware(['ADMIN', 'BCH']), checkAttendance);
 router.get('/', roleMiddleware(['ADMIN', 'BCH']), getAttendanceByDate);
 router.get('/student/:studentId', getAttendanceByStudent);

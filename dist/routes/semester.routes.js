@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { getSemesters, createSemester, deleteSemester, updateSemester, clearAllSemesterData } from '../controllers/semester.controller';
-import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
+import { getSemesters, createSemester, deleteSemester, updateSemester, clearAllSemesterData } from '../controllers/semester.controller.js';
+import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware.js';
 const router = Router();
 router.get('/', authMiddleware, getSemesters);
 router.post('/', authMiddleware, roleMiddleware(['ADMIN', 'BCH']), createSemester);
