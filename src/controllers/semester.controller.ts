@@ -1,7 +1,11 @@
 import type { Response } from 'express';
-import type { AuthRequest } from '../middleware/auth.middleware';
+import type { AuthRequest } from '../types';
 import prisma from '../utils/prisma';
 import { normalizeSemesterName, parseSemesterDateInput } from '../utils/semester';
+import fs from 'fs';
+import fsp from 'fs/promises';
+import path from 'path';
+import { deleteObjectFromR2 } from '../utils/r2';
 
 const mapSemesterPayload = (semester: any) => ({
   name: semester.name,
@@ -219,4 +223,167 @@ export const updateSemester = async (req: AuthRequest, res: Response) => {
     res.status(500).json({ message: 'Loi may chu' });
   }
 };
+
+const uploadRootDir = path.join(process.cwd(), 'uploads', 'evidence');
+
+const parseDetails = (raw: unknown): Record<string, any> => {
+  let parsed: unknown = raw;
+  for (let i = 0; i < 3; i += 1) {
+    if (typeof parsed !== 'string') break;
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      break;
+    }
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+  return parsed as Record<string, any>;
+};
+
+const normalizeStoredFiles = (raw: unknown): Array<{ path: string; name?: string; size?: number }> => {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      if (typeof item === 'string') {
+        return { path: item };
+      }
+      if (!item || typeof item !== 'object') return null;
+      const record = item as Record<string, unknown>;
+      const filePath = typeof record.path === 'string' ? record.path : '';
+      if (!filePath) return null;
+      return {
+        path: filePath,
+        name: typeof record.name === 'string' ? record.name : undefined,
+        size: typeof record.size === 'number' ? record.size : undefined,
+      };
+    })
+    .filter((item): item is { path: string; name?: string; size?: number } => Boolean(item));
+};
+
+const normalizeLocalEvidenceKey = (value: string) =>
+  String(value || '')
+    .replace(/^uploads\/evidence\//i, '')
+    .replace(/^\/+/, '')
+    .replace(/\\/g, '/')
+    .trim();
+
+const resolveLocalEvidencePath = (rawKey: string) => {
+  const normalized = normalizeLocalEvidenceKey(rawKey);
+  if (!normalized || normalized.includes('\0')) return null;
+
+  const segments = normalized.split('/').filter(Boolean);
+  if (segments.length === 0) return null;
+  if (segments.some((segment) => segment === '.' || segment === '..')) return null;
+
+  const basePath = path.resolve(uploadRootDir);
+  const candidatePath = path.resolve(basePath, ...segments);
+  if (candidatePath !== basePath && !candidatePath.startsWith(`${basePath}${path.sep}`)) {
+    return null;
+  }
+
+  return candidatePath;
+};
+
+export const clearAllSemesterData = async (req: AuthRequest, res: Response) => {
+  const name = normalizeSemesterName(req.params?.name);
+
+  if (!name) {
+    return res.status(400).json({ message: 'Ten hoc ky khong duoc de trong' });
+  }
+
+  try {
+    // 1. Kiem tra hoc ky ton tai
+    const semester = await (prisma as any).semester.findUnique({
+      where: { name },
+    });
+
+    if (!semester) {
+      return res.status(404).json({ message: 'Khong tim thay hoc ky nay' });
+    }
+
+    // 2. Lay tat ca cac TrainingScore de extract thong tin file / hinh anh
+    const trainingScores = await (prisma.trainingScore as any).findMany({
+      where: { semester_id: name },
+      select: { details: true, admin_details: true },
+    });
+
+    const filePathsToDelete: string[] = [];
+
+    const extractFilesFromDetailsObj = (obj: Record<string, any>) => {
+      for (const criterion of Object.values(obj)) {
+        if (criterion && typeof criterion === 'object') {
+          const files = normalizeStoredFiles((criterion as Record<string, unknown>).files);
+          for (const f of files) {
+            if (f.path) {
+              filePathsToDelete.push(f.path);
+            }
+          }
+        }
+      }
+    };
+
+    for (const score of trainingScores) {
+      const detailsObj = parseDetails(score.details);
+      const adminDetailsObj = parseDetails(score.admin_details);
+      extractFilesFromDetailsObj(detailsObj);
+      extractFilesFromDetailsObj(adminDetailsObj);
+    }
+
+    const uniquePaths = Array.from(new Set(filePathsToDelete));
+
+    // 3. Tien hanh xoa file tren disk/R2
+    let deletedCount = 0;
+    for (const filePath of uniquePaths) {
+      try {
+        if (filePath.toLowerCase().startsWith('r2:')) {
+          const key = filePath.slice(3);
+          const success = await deleteObjectFromR2(key);
+          if (success) deletedCount++;
+        } else {
+          const localPath = resolveLocalEvidencePath(filePath);
+          if (localPath && fs.existsSync(localPath)) {
+            await fsp.unlink(localPath);
+            deletedCount++;
+          }
+        }
+      } catch (err) {
+        console.error(`Loi khi xoa file ${filePath}:`, err);
+      }
+    }
+
+    // 4. Update cac Class dang active hoc ky nay ve null de tranh vi pham khoa ngoai
+    await (prisma as any).class.updateMany({
+      where: { active_semester_id: name },
+      data: { active_semester_id: null },
+    });
+
+    // 5. Xoa TrainingScore
+    const deletedScores = await (prisma.trainingScore as any).deleteMany({
+      where: { semester_id: name },
+    });
+
+    // 6. Xoa AttendanceSession (cascade delete Attendance)
+    const deletedSessions = await (prisma as any).attendanceSession.deleteMany({
+      where: { drl_semester_id: name },
+    });
+
+    // 7. Xoa Semester
+    await (prisma as any).semester.delete({
+      where: { name },
+    });
+
+    res.json({
+      message: `Da xoa toan bo du lieu lien quan den hoc ky ${name} thanh cong.`,
+      summary: {
+        deletedFilesCount: deletedCount,
+        deletedScoresCount: deletedScores.count,
+        deletedAttendanceSessionsCount: deletedSessions.count,
+      },
+    });
+  } catch (error) {
+    console.error('Loi khi xoa toan bo du lieu hoc ky:', error);
+    res.status(500).json({ message: 'Loi may chu khi xoa du lieu hoc ky' });
+  }
+};
+
 

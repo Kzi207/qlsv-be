@@ -11,7 +11,7 @@ export const csrfMiddleware = (req: Request, res: Response, next: NextFunction) 
 
   // Normalize path by removing trailing slash for comparison
   const path = req.path.replace(/\/$/, '') || '/';
-  if (EXCLUDED_PATHS.has(path)) {
+  if (EXCLUDED_PATHS.has(path) || path.startsWith('/api/events/public/')) {
     return next();
   }
 

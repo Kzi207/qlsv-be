@@ -2,9 +2,36 @@ import { Router } from 'express';
 import { getStudents, createStudent, updateStudent, deleteStudent, createStudentAccount, deleteStudentAccount, importStudentsExcel, getStudentTemplate, deleteClassStudents, exportStudentAccounts, getStudentStats } from '../controllers/student.controller';
 import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
 import multer from 'multer';
+import path from 'path';
 
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage() });
+
+const ALLOWED_EXCEL_EXTENSIONS = new Set(['.xlsx', '.xls']);
+const ALLOWED_EXCEL_MIMES = new Set([
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-excel',
+  'application/octet-stream',
+]);
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 8 * 1024 * 1024,
+    files: 1,
+    fields: 8,
+  },
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(String(file.originalname || '')).toLowerCase();
+    const mimetype = String(file.mimetype || '').toLowerCase();
+
+    if (!ALLOWED_EXCEL_EXTENSIONS.has(ext) || !ALLOWED_EXCEL_MIMES.has(mimetype)) {
+      cb(new Error('Chi chap nhan tep Excel (.xlsx, .xls)'));
+      return;
+    }
+
+    cb(null, true);
+  },
+});
 
 router.use(authMiddleware);
 

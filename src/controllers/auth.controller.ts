@@ -2,10 +2,28 @@ import type { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import prisma from '../utils/prisma';
-import type { AuthRequest } from '../middleware/auth.middleware';
+import type { AuthRequest } from '../types';
 import { clearAuthCookies, createCsrfToken, setAuthCookies, setCsrfCookie, getCookieValue, CSRF_COOKIE_NAME } from '../utils/security';
+import { getJwtSecret } from '../utils/env';
 
-const getJwtSecret = () => process.env.JWT_SECRET || 'secret';
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync('invalid-password-for-timing-defense', 10);
+
+const applyNoStoreHeaders = (res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+};
+
+const resolveInternalErrorMessage = (error: unknown) => {
+  if (process.env.NODE_ENV === 'production') return 'Server error';
+
+  const raw = error instanceof Error ? error.message : String(error || 'Unknown error');
+  if (raw.toLowerCase().includes('database_url')) {
+    return 'Backend is missing DATABASE_URL. Configure backend/.env and restart server.';
+  }
+
+  return raw;
+};
 
 const toSafeUser = (user: any) => ({
   id: user.id,
@@ -18,20 +36,32 @@ const toSafeUser = (user: any) => ({
 });
 
 export const login = async (req: Request, res: Response) => {
-  const { username, password } = req.body;
+  const username = String(req.body?.username || '').trim();
+  const password = String(req.body?.password || '');
 
   try {
+    applyNoStoreHeaders(res);
+
     if (!username || !password) {
       return res.status(400).json({ message: 'Username and password are required' });
     }
 
-    const users: any[] = await prisma.$queryRawUnsafe(
-      'SELECT * FROM "User" WHERE username = $1 LIMIT 1',
-      username
-    );
-    const user = users[0];
+    const user = await prisma.user.findUnique({
+      where: { username },
+      select: {
+        id: true,
+        username: true,
+        password: true,
+        name: true,
+        email: true,
+        role: true,
+        studentId: true,
+        class_id: true,
+      },
+    });
 
     if (!user) {
+      await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
@@ -61,14 +91,12 @@ export const login = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: resolveInternalErrorMessage(error) });
   }
 };
 
 export const me = async (req: AuthRequest, res: Response) => {
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '0');
+  applyNoStoreHeaders(res);
 
   if (!req.user?.id) {
     return res.status(401).json({ message: 'Unauthorized' });
@@ -111,7 +139,7 @@ export const me = async (req: AuthRequest, res: Response) => {
 
 export const logout = (req: Request, res: Response) => {
   clearAuthCookies(req, res);
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  applyNoStoreHeaders(res);
   res.json({ message: 'Logged out' });
 };
 
@@ -155,8 +183,8 @@ export const changePassword = async (req: AuthRequest, res: Response) => {
     return res.status(400).json({ message: 'Current password and new password are required' });
   }
 
-  if (newPassword.length < 6) {
-    return res.status(400).json({ message: 'New password must be at least 6 characters' });
+  if (newPassword.length < 8) {
+    return res.status(400).json({ message: 'New password must be at least 8 characters' });
   }
 
   try {

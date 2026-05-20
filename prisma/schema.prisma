@@ -115,24 +115,41 @@ model Attendance {
   session_id       Int?
   session          AttendanceSession? @relation(fields: [session_id], references: [id], onDelete: Cascade)
   student          Student            @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  @@index([student_id])
+  @@index([session_id])
+  @@index([date])
+  @@index([student_id, date])
+  @@unique([student_id, session_id])
 }
 
 model AttendanceSession {
-  id          Int          @id @default(autoincrement())
-  title       String
-  subject     String       @default("")
-  class_id    String?
-  qrToken     String       @unique
-  lat         Float
-  lng         Float
-  radius      Float
-  isActive    Boolean      @default(true)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  endedAt     DateTime?
-  sessionDate DateTime     @default(now())
-  attendances Attendance[]
-  class       Class?       @relation(fields: [class_id], references: [name], onDelete: Cascade)
+  id                Int          @id @default(autoincrement())
+  session_type      String       @default("QR_CLASS")
+  title             String
+  subject           String       @default("")
+  class_id          String?
+  qrToken           String       @unique
+  lat               Float
+  lng               Float
+  radius            Float
+  isActive          Boolean      @default(true)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  endedAt           DateTime?
+  sessionDate       DateTime     @default(now())
+  check_in_start_at DateTime?
+  check_in_end_at   DateTime?
+  drl_section_id    String?
+  drl_criterion_id  String?
+  drl_points        Int?
+  drl_semester_id   String?
+  attendances       Attendance[]
+  class             Class?       @relation(fields: [class_id], references: [name], onDelete: Cascade)
+
+  @@index([isActive, sessionDate])
+  @@index([class_id, isActive])
+  @@index([class_id, sessionDate])
 }
 
 model StudentAttendanceProfile {
@@ -154,4 +171,28 @@ enum Role {
   ADMIN
   BCH
   STUDENT
+}
+
+model Event {
+  id             Int                 @id @default(autoincrement())
+  title          String
+  description    String?
+  allowedClasses String              // Semicolon/comma separated list of class names
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  registrations  EventRegistration[]
+}
+
+model EventRegistration {
+  id           Int      @id @default(autoincrement())
+  eventId      Int
+  studentName  String
+  studentCode  String
+  classId      String
+  registeredAt DateTime @default(now())
+  event        Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@index([studentCode])
+  @@unique([eventId, studentCode])
 }

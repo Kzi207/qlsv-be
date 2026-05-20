@@ -4,6 +4,7 @@ import {
   PutObjectCommand,
   S3Client,
   S3ServiceException,
+  DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
 import type { Readable } from 'stream';
 
@@ -173,3 +174,20 @@ export const validateR2Access = async () => {
     return { ok: false as const, message: formatR2Error(error) };
   }
 };
+
+export const deleteObjectFromR2 = async (key: string) => {
+  const { client, bucket } = createR2Client();
+  try {
+    await client.send(
+      new DeleteObjectCommand({
+        Bucket: bucket,
+        Key: key,
+      })
+    );
+    return true;
+  } catch (error) {
+    console.error(`Xoa file tu R2 that bai (Key: ${key}):`, formatR2Error(error));
+    return false;
+  }
+};
+

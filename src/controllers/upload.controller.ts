@@ -1,5 +1,5 @@
 import type { RequestHandler, Response } from 'express';
-import type { AuthRequest } from '../middleware/auth.middleware';
+import type { AuthRequest } from '../types';
 import multer from 'multer';
 import fs from 'fs';
 import fsp from 'fs/promises';
@@ -16,16 +16,59 @@ import {
 const uploadRootDir = path.join(process.cwd(), 'uploads', 'evidence');
 if (!fs.existsSync(uploadRootDir)) fs.mkdirSync(uploadRootDir, { recursive: true });
 
-const allowedFileRegex = /pdf|doc|docx|jpg|jpeg|png|gif|webp/i;
+const ALLOWED_EVIDENCE_EXTENSIONS = new Set(['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png', '.gif', '.webp']);
+const ALLOWED_EVIDENCE_MIME_TO_EXTENSIONS = new Map<string, string[]>([
+  ['application/pdf', ['.pdf']],
+  ['application/msword', ['.doc']],
+  ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', ['.docx']],
+  ['image/jpeg', ['.jpg', '.jpeg']],
+  ['image/pjpeg', ['.jpg', '.jpeg']],
+  ['image/png', ['.png']],
+  ['image/gif', ['.gif']],
+  ['image/webp', ['.webp']],
+]);
+
+const CONTENT_TYPE_BY_EXTENSION = new Map<string, string>([
+  ['.pdf', 'application/pdf'],
+  ['.doc', 'application/msword'],
+  ['.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+  ['.jpg', 'image/jpeg'],
+  ['.jpeg', 'image/jpeg'],
+  ['.png', 'image/png'],
+  ['.gif', 'image/gif'],
+  ['.webp', 'image/webp'],
+]);
+
 const criterionIdRegex = /^\d+\.\d+$/;
+
+const resolveEvidenceExtension = (file: Express.Multer.File) => {
+  const ext = path.extname(String(file.originalname || '')).toLowerCase();
+  const mimetype = String(file.mimetype || '').toLowerCase();
+
+  const allowedExtByMime = ALLOWED_EVIDENCE_MIME_TO_EXTENSIONS.get(mimetype) || [];
+  if (ext && ALLOWED_EVIDENCE_EXTENSIONS.has(ext) && allowedExtByMime.includes(ext)) {
+    return ext;
+  }
+
+  return allowedExtByMime[0] || '';
+};
+
+const hasAllowedEvidenceType = (file: Express.Multer.File) => Boolean(resolveEvidenceExtension(file));
 
 export const upload: RequestHandler = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: {
+    fileSize: 10 * 1024 * 1024,
+    files: 10,
+    fields: 12,
+    fieldSize: 64 * 1024,
+  },
   fileFilter: (_req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    if (allowedFileRegex.test(ext)) cb(null, true);
-    else cb(new Error('Chi ho tro: PDF, Word, hinh anh'));
+    if (!hasAllowedEvidenceType(file)) {
+      cb(new Error('Chi ho tro: PDF, Word, hinh anh'));
+      return;
+    }
+    cb(null, true);
   },
 }).array('files', 10);
 
@@ -87,18 +130,44 @@ const fileBaseWithoutExt = (filePath: string) => {
 };
 
 const getExtensionForFile = (file: Express.Multer.File) => {
-  const ext = path.extname(file.originalname).toLowerCase();
-  if (ext) return ext;
+  return resolveEvidenceExtension(file);
+};
 
-  const mimetype = String(file.mimetype || '').toLowerCase();
-  if (mimetype === 'image/jpeg') return '.jpg';
-  if (mimetype === 'image/png') return '.png';
-  if (mimetype === 'image/webp') return '.webp';
-  if (mimetype === 'image/gif') return '.gif';
-  if (mimetype === 'application/pdf') return '.pdf';
-  if (mimetype === 'application/msword') return '.doc';
-  if (mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return '.docx';
-  return '';
+const decodeEvidenceKey = (rawKey: string) => {
+  try {
+    return decodeURIComponent(rawKey);
+  } catch {
+    return rawKey;
+  }
+};
+
+const normalizeLocalEvidenceKey = (value: string) =>
+  String(value || '')
+    .replace(/^uploads\/evidence\//i, '')
+    .replace(/^\/+/, '')
+    .replace(/\\/g, '/')
+    .trim();
+
+const resolveLocalEvidencePath = (rawKey: string) => {
+  const normalized = normalizeLocalEvidenceKey(rawKey);
+  if (!normalized || normalized.includes('\0')) return null;
+
+  const segments = normalized.split('/').filter(Boolean);
+  if (segments.length === 0) return null;
+  if (segments.some((segment) => segment === '.' || segment === '..')) return null;
+
+  const basePath = path.resolve(uploadRootDir);
+  const candidatePath = path.resolve(basePath, ...segments);
+  if (candidatePath !== basePath && !candidatePath.startsWith(`${basePath}${path.sep}`)) {
+    return null;
+  }
+
+  return candidatePath;
+};
+
+const applyCommonEvidenceHeaders = (res: Response) => {
+  res.setHeader('Cache-Control', 'private, max-age=3600');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
 };
 
 const getNextIndexForCriterion = async (studentId: number, studentCode: string, criterionToken: string) => {
@@ -346,38 +415,85 @@ export const getEvidenceFile = async (req: AuthRequest, res: Response) => {
     return res.status(400).json({ message: 'Thieu ma file minh chung' });
   }
 
-  if (!isR2Configured()) {
-    return res.status(500).json({ message: 'Cloudflare R2 chua duoc cau hinh' });
-  }
+  const decodedKey = decodeEvidenceKey(rawKey);
 
-  const objectKey = (() => {
-    try {
-      return decodeURIComponent(rawKey);
-    } catch {
-      return rawKey;
-    }
-  })();
-
-  try {
+  const streamFromR2 = async (objectKey: string) => {
     const response = await getObjectFromR2(objectKey);
-    if (!response) {
-      return res.status(404).json({ message: 'Khong tim thay minh chung' });
-    }
+    if (!response) return false;
 
-    const contentType = response.contentType;
-    const contentLength = response.contentLength;
-    const eTag = response.eTag;
-    const lastModified = response.lastModified;
+    if (response.contentType) res.setHeader('Content-Type', response.contentType);
+    if (response.contentLength) res.setHeader('Content-Length', response.contentLength);
+    if (response.eTag) res.setHeader('ETag', response.eTag);
+    if (response.lastModified) res.setHeader('Last-Modified', response.lastModified.toUTCString());
+    applyCommonEvidenceHeaders(res);
 
-    if (contentType) res.setHeader('Content-Type', contentType);
-    if (contentLength) res.setHeader('Content-Length', contentLength);
-    if (eTag) res.setHeader('ETag', eTag);
-    if (lastModified) res.setHeader('Last-Modified', lastModified.toUTCString());
-    res.setHeader('Cache-Control', 'private, max-age=3600');
+    response.body.on('error', (streamError) => {
+      console.error('Evidence R2 stream failed:', streamError);
+      if (!res.headersSent) {
+        res.status(500).json({ message: 'Khong the doc minh chung tu Cloudflare R2' });
+      } else {
+        res.destroy(streamError as Error);
+      }
+    });
 
     response.body.pipe(res);
+    return true;
+  };
+
+  try {
+    if (decodedKey.toLowerCase().startsWith('r2:')) {
+      if (!isR2Configured()) {
+        return res.status(500).json({ message: 'Cloudflare R2 chua duoc cau hinh' });
+      }
+
+      const served = await streamFromR2(decodedKey.slice(3));
+      if (!served) {
+        return res.status(404).json({ message: 'Khong tim thay minh chung' });
+      }
+      return;
+    }
+
+    const localFilePath = resolveLocalEvidencePath(decodedKey);
+    if (localFilePath) {
+      try {
+        const stats = await fsp.stat(localFilePath);
+        if (!stats.isFile()) {
+          return res.status(404).json({ message: 'Khong tim thay minh chung' });
+        }
+
+        const extension = path.extname(localFilePath).toLowerCase();
+        const contentType = CONTENT_TYPE_BY_EXTENSION.get(extension);
+        if (contentType) res.setHeader('Content-Type', contentType);
+        res.setHeader('Content-Length', String(stats.size));
+        applyCommonEvidenceHeaders(res);
+
+        const localStream = fs.createReadStream(localFilePath);
+        localStream.on('error', (streamError) => {
+          console.error('Evidence local stream failed:', streamError);
+          if (!res.headersSent) {
+            res.status(500).json({ message: 'Khong the doc minh chung tu bo nho cuc bo' });
+          } else {
+            res.destroy(streamError as Error);
+          }
+        });
+
+        localStream.pipe(res);
+        return;
+      } catch (error: any) {
+        if (error?.code !== 'ENOENT') {
+          throw error;
+        }
+      }
+    }
+
+    if (isR2Configured()) {
+      const served = await streamFromR2(decodedKey);
+      if (served) return;
+    }
+
+    return res.status(404).json({ message: 'Khong tim thay minh chung' });
   } catch (error) {
     console.error('Evidence proxy failed:', error);
-    return res.status(500).json({ message: 'Khong the doc minh chung tu Cloudflare R2' });
+    return res.status(500).json({ message: 'Khong the doc minh chung' });
   }
 };

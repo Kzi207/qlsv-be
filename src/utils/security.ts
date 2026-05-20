@@ -68,6 +68,7 @@ const getCookieDomain = (req?: Request) => {
 const shouldUseSecureCookies = (req?: Request) => {
   const forcedSecure = process.env.COOKIE_SECURE === 'true';
   if (forcedSecure) return true;
+  if (process.env.NODE_ENV === 'production') return true;
 
   const isHttpsRequest =
     req?.protocol === 'https' ||
