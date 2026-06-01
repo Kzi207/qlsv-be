@@ -6,6 +6,7 @@ import fs from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
 import { deleteObjectFromR2 } from '../utils/r2.js';
+import { getEvidenceUploadRootDir } from '../utils/upload-path.js';
 
 const mapSemesterPayload = (semester: any) => ({
   name: semester.name,
@@ -224,7 +225,7 @@ export const updateSemester = async (req: AuthRequest, res: Response) => {
   }
 };
 
-const uploadRootDir = path.join(process.cwd(), 'uploads', 'evidence');
+const uploadRootDir = getEvidenceUploadRootDir();
 
 const parseDetails = (raw: unknown): Record<string, any> => {
   let parsed: unknown = raw;

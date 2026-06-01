@@ -4,6 +4,7 @@ import fs from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
 import { deleteObjectFromR2 } from '../utils/r2.js';
+import { getEvidenceUploadRootDir } from '../utils/upload-path.js';
 const mapSemesterPayload = (semester) => ({
     name: semester.name,
     startDate: semester.startDate,
@@ -195,7 +196,7 @@ export const updateSemester = async (req, res) => {
         res.status(500).json({ message: 'Loi may chu' });
     }
 };
-const uploadRootDir = path.join(process.cwd(), 'uploads', 'evidence');
+const uploadRootDir = getEvidenceUploadRootDir();
 const parseDetails = (raw) => {
     let parsed = raw;
     for (let i = 0; i < 3; i += 1) {

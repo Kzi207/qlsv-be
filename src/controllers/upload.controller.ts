@@ -7,6 +7,7 @@ import fsp from 'fs/promises';
 import path from 'path';
 import prisma from '../utils/prisma.js';
 import { getObjectFromR2, isR2Configured, uploadBufferToR2, validateR2Access } from '../utils/r2.js';
+import { getEvidenceUploadRootDir } from '../utils/upload-path.js';
 import {
   getSemesterClosedMessage,
   getSemesterSubmissionStatus,
@@ -14,7 +15,7 @@ import {
   normalizeSemesterName,
 } from '../utils/semester.js';
 
-const uploadRootDir = path.join(process.cwd(), 'uploads', 'evidence');
+const uploadRootDir = getEvidenceUploadRootDir();
 if (!fs.existsSync(uploadRootDir)) fs.mkdirSync(uploadRootDir, { recursive: true });
 
 const ALLOWED_EVIDENCE_EXTENSIONS = new Set(['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png', '.gif', '.webp']);
