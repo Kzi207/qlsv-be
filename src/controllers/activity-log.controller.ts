@@ -32,6 +32,7 @@ export const getActivityLogs = async (req: AuthRequest, res: Response) => {
       { targetId: { contains: keyword, mode: 'insensitive' } },
       { ipAddress: { contains: keyword, mode: 'insensitive' } },
       { deviceId: { contains: keyword, mode: 'insensitive' } },
+      { userAgent: { contains: keyword, mode: 'insensitive' } },
       { classId: { contains: keyword, mode: 'insensitive' } },
       ],
     });
