@@ -124,6 +124,7 @@ export const login = async (req: Request, res: Response) => {
     res.json({
       user: toSafeUser(user),
       csrfToken,
+      accessToken: token,
     });
   } catch (error) {
     console.error('Login error:', error);

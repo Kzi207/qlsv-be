@@ -25,23 +25,27 @@ export const authMiddleware = (req: AuthRequest, res: Response, next: NextFuncti
   const tokenFromCookie = getCookieValue(req, AUTH_COOKIE_NAME);
   const tokenFromHeader = getTokenFromAuthorizationHeader(req.header('Authorization'));
   const tokenFromQuery = getTokenFromQuery(req);
-  const token = tokenFromCookie || tokenFromHeader || tokenFromQuery;
+  const tokenCandidates = [tokenFromCookie, tokenFromHeader, tokenFromQuery].filter(Boolean);
 
-  if (!token) {
+  if (tokenCandidates.length === 0) {
     return res.status(401).json({ message: 'No token, authorization denied' });
   }
 
-  try {
-    const decoded = jwt.verify(token, getJwtSecret());
-    if (!decoded || typeof decoded === 'string') {
-      return res.status(401).json({ message: 'Token is not valid' });
-    }
+  for (const token of tokenCandidates) {
+    try {
+      const decoded = jwt.verify(token, getJwtSecret());
+      if (!decoded || typeof decoded === 'string') {
+        continue;
+      }
 
-    req.user = decoded as AuthPayload;
-    return next();
-  } catch (error) {
-    return res.status(401).json({ message: 'Token is not valid' });
+      req.user = decoded as AuthPayload;
+      return next();
+    } catch {
+      // Try the next available auth source.
+    }
   }
+
+  return res.status(401).json({ message: 'Token is not valid' });
 };
 
 export const roleMiddleware = (roles: string[]) => {
