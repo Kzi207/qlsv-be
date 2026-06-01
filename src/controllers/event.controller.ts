@@ -1,7 +1,8 @@
-﻿import type { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { Prisma } from '@prisma/client';
 import prisma from '../utils/prisma.js';
 import bcrypt from 'bcryptjs';
+import { getExcelJS, sendWorkbookAsXlsx } from '../utils/excel.js';
 
 export const createEvent = async (req: Request, res: Response) => {
   const { title, description, allowedClasses } = req.body;
@@ -239,9 +240,8 @@ export const exportEventRegistrationsExcel = async (req: Request, res: Response)
       orderBy: { registeredAt: 'asc' },
     });
 
-    const ExcelJS = await import('exceljs');
-    const ExcelJSModule = (ExcelJS.default || ExcelJS) as any;
-    const workbook = new ExcelJSModule.Workbook();
+    const ExcelJS = await getExcelJS();
+    const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Danh SÃ¡ch ÄÄƒng KÃ½');
 
     sheet.columns = [
@@ -269,11 +269,7 @@ export const exportEventRegistrationsExcel = async (req: Request, res: Response)
       });
     });
 
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="danh-sach-dang-ky-${event.id}.xlsx"`);
-
-    await workbook.xlsx.write(res);
-    res.end();
+    await sendWorkbookAsXlsx(res, workbook, `danh-sach-dang-ky-${event.id}.xlsx`);
   } catch (error) {
     console.error('Error exporting registrations:', error);
     res.status(500).json({ message: 'Lá»—i server khi xuáº¥t file excel' });

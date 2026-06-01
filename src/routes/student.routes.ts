@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getStudents, createStudent, updateStudent, deleteStudent, createStudentAccount, deleteStudentAccount, importStudentsExcel, getStudentTemplate, deleteClassStudents, exportStudentAccounts, getStudentStats } from '../controllers/student.controller.js';
+import { getStudents, createStudent, updateStudent, deleteStudent, createStudentAccount, deleteStudentAccount, importStudentsExcel, getStudentTemplate, deleteClassStudents, exportStudentAccounts, getStudentStats, getDashboardStats } from '../controllers/student.controller.js';
 import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware.js';
 import multer from 'multer';
 import path from 'path';
@@ -37,6 +37,7 @@ router.use(authMiddleware);
 
 // Public routes (for all authenticated users)
 router.get('/stats', getStudentStats);
+router.get('/dashboard-stats', roleMiddleware(['ADMIN', 'BCH']), getDashboardStats);
 
 // Protected routes (ADMIN & BCH only)
 const adminBchOnly = roleMiddleware(['ADMIN', 'BCH']);

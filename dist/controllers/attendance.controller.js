@@ -2,9 +2,18 @@ import { Prisma } from '@prisma/client';
 import crypto from 'crypto';
 import prisma from '../utils/prisma.js';
 import { normalizeSemesterName } from '../utils/semester.js';
+import { getExcelJS, sendWorkbookAsXlsx } from '../utils/excel.js';
+import { writeActivityLog } from '../utils/activity-log.js';
 const EARTH_RADIUS_METERS = 6371e3;
 const criterionIdRegex = /^\d+\.\d+$/;
 const sectionIdRegex = /^sec-[1-5]$/i;
+const mapsCoordinatePatterns = [
+    /@([+-]?\d+(?:\.\d+)?),([+-]?\d+(?:\.\d+)?)/,
+    /!3d([+-]?\d+(?:\.\d+)?)[^!]*!4d([+-]?\d+(?:\.\d+)?)/,
+    /[?&]q=([+-]?\d+(?:\.\d+)?),([+-]?\d+(?:\.\d+)?)/,
+    /[?&]ll=([+-]?\d+(?:\.\d+)?),([+-]?\d+(?:\.\d+)?)/,
+    /([+-]?\d+(?:\.\d+)?),\s*([+-]?\d+(?:\.\d+)?)/,
+];
 const isPrismaUniqueViolation = (error, fields) => {
     if (!(error instanceof Prisma.PrismaClientKnownRequestError))
         return false;
@@ -28,6 +37,37 @@ const getDistance = (lat1, lon1, lat2, lon2) => {
 const parseFiniteNumber = (value) => {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : null;
+};
+const parseCoordinatesFromText = (input) => {
+    const text = String(input ?? '').trim();
+    if (!text)
+        return null;
+    for (const pattern of mapsCoordinatePatterns) {
+        const match = text.match(pattern);
+        if (!match)
+            continue;
+        const lat = Number(match[1]);
+        const lng = Number(match[2]);
+        if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+            return { lat, lng };
+        }
+    }
+    return null;
+};
+const isAllowedGoogleMapsUrl = (value) => {
+    try {
+        const parsed = new URL(value);
+        const hostname = parsed.hostname.toLowerCase();
+        return (parsed.protocol === 'https:' &&
+            (hostname === 'maps.app.goo.gl' ||
+                hostname === 'goo.gl' ||
+                hostname === 'maps.google.com' ||
+                hostname === 'www.google.com' ||
+                hostname.endsWith('.google.com')));
+    }
+    catch {
+        return false;
+    }
 };
 const parseOptionalDate = (value) => {
     const raw = String(value ?? '').trim();
@@ -167,6 +207,49 @@ const normalizeSessionType = (value) => {
         return 'ACTIVITY';
     return 'QR_CLASS';
 };
+export const resolveMapCoordinates = async (req, res) => {
+    const rawUrl = String(req.body?.url || '').trim();
+    if (!rawUrl) {
+        return res.status(400).json({ message: 'Vui long nhap link Google Maps' });
+    }
+    const directCoordinates = parseCoordinatesFromText(rawUrl);
+    if (directCoordinates) {
+        return res.json(directCoordinates);
+    }
+    if (!isAllowedGoogleMapsUrl(rawUrl)) {
+        return res.status(400).json({ message: 'Link Google Maps khong hop le' });
+    }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+        const response = await fetch(rawUrl, {
+            redirect: 'follow',
+            signal: controller.signal,
+            headers: {
+                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari',
+            },
+        });
+        const candidates = [response.url];
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('text/html') || contentType.includes('text/plain')) {
+            candidates.push(await response.text());
+        }
+        for (const candidate of candidates) {
+            const coordinates = parseCoordinatesFromText(candidate);
+            if (coordinates) {
+                return res.json(coordinates);
+            }
+        }
+        return res.status(400).json({ message: 'Khong tim thay toa do trong link Google Maps' });
+    }
+    catch (error) {
+        console.error('resolveMapCoordinates error:', error);
+        return res.status(400).json({ message: 'Khong the mo link Google Maps de lay toa do' });
+    }
+    finally {
+        clearTimeout(timeout);
+    }
+};
 const getManagedClassId = (req, requestedClassId, required = false) => {
     const role = getRequestRole(req);
     const normalizedRequested = normalizeClassId(requestedClassId);
@@ -222,6 +305,21 @@ export const checkAttendance = async (req, res) => {
             const updatedAttendance = await prisma.attendance.update({
                 where: { id: existingAttendance.id },
                 data: { status },
+                include: { student: true },
+            });
+            await writeActivityLog(req, {
+                action: 'ATTENDANCE_MANUAL_UPDATE',
+                category: 'ATTENDANCE',
+                targetType: 'Attendance',
+                targetId: updatedAttendance.id,
+                summary: `Cap nhat diem danh thu cong cho ${updatedAttendance.student?.name || student_id}: ${status}`,
+                details: {
+                    previousStatus: existingAttendance.status,
+                    currentStatus: status,
+                    date,
+                },
+                studentId: updatedAttendance.student_id,
+                classId: updatedAttendance.student?.class_id,
             });
             return res.json(updatedAttendance);
         }
@@ -231,6 +329,17 @@ export const checkAttendance = async (req, res) => {
                 date: new Date(date),
                 status,
             },
+            include: { student: true },
+        });
+        await writeActivityLog(req, {
+            action: 'ATTENDANCE_MANUAL_CREATE',
+            category: 'ATTENDANCE',
+            targetType: 'Attendance',
+            targetId: attendance.id,
+            summary: `Tao diem danh thu cong cho ${attendance.student?.name || student_id}: ${status}`,
+            details: { status, date },
+            studentId: attendance.student_id,
+            classId: attendance.student?.class_id,
         });
         return res.status(201).json(attendance);
     }
@@ -325,7 +434,7 @@ export const createAttendanceSession = async (req, res) => {
     const hasEndAtInput = hasInputValue(checkInEndAtInput);
     const parsedCheckInStartAt = parseOptionalDate(checkInStartAtInput);
     const parsedCheckInEndAt = parseOptionalDate(checkInEndAtInput);
-    const hasDrlConfigInput = Boolean(rawSectionId || rawCriterionId || parsedDrlPoints !== null);
+    const hasDrlConfigInput = sessionType === 'ACTIVITY' && Boolean(rawSectionId || rawCriterionId || parsedDrlPoints !== null);
     if (!title || !String(title).trim()) {
         return res.status(400).json({ message: 'Vui long nhap ten phien diem danh' });
     }
@@ -426,6 +535,28 @@ export const createAttendanceSession = async (req, res) => {
                     class: true,
                 },
             });
+        });
+        await writeActivityLog(req, {
+            action: 'ATTENDANCE_SESSION_CREATE',
+            category: 'ATTENDANCE',
+            targetType: 'AttendanceSession',
+            targetId: session.id,
+            summary: `Tao phien diem danh "${session.title}"`,
+            details: {
+                sessionType: session.session_type,
+                subject: session.subject,
+                classId: session.class_id,
+                sessionDate: session.sessionDate,
+                checkInStartAt: session.check_in_start_at,
+                checkInEndAt: session.check_in_end_at,
+                radius: session.radius,
+                drl: {
+                    criterionId: session.drl_criterion_id,
+                    points: session.drl_points,
+                    semester: session.drl_semester_id,
+                },
+            },
+            classId: session.class_id,
         });
         return res.status(201).json(session);
     }
@@ -806,6 +937,31 @@ export const qrCheckIn = async (req, res) => {
             }
             return { attendance, trainingAward };
         });
+        await writeActivityLog(req, {
+            action: 'QR_CHECK_IN',
+            category: 'ATTENDANCE',
+            targetType: 'Attendance',
+            targetId: transactionResult.attendance.id,
+            summary: `${student.name} diem danh QR phien "${session.title}"`,
+            details: {
+                sessionId: session.id,
+                sessionTitle: session.title,
+                sessionType: session.session_type,
+                classId: session.class_id,
+                latitude: parsedLat,
+                longitude: parsedLng,
+                verification: {
+                    baselineCreated,
+                    verifiedIp,
+                    verifiedLocation,
+                    sessionDistance: Math.round(sessionDistance),
+                    profileDistance: profileDistance === null ? null : Math.round(profileDistance),
+                },
+                trainingAward: transactionResult.trainingAward,
+            },
+            studentId,
+            classId: student.class_id,
+        });
         return res.status(201).json({
             attendance: transactionResult.attendance,
             verification: {
@@ -1013,6 +1169,19 @@ export const endAttendanceSession = async (req, res) => {
                 class: true,
             },
         });
+        await writeActivityLog(req, {
+            action: 'ATTENDANCE_SESSION_END',
+            category: 'ATTENDANCE',
+            targetType: 'AttendanceSession',
+            targetId: updatedSession.id,
+            summary: `Ket thuc phien diem danh "${updatedSession.title}"`,
+            details: {
+                sessionId: updatedSession.id,
+                classId: updatedSession.class_id,
+                endedAt: updatedSession.endedAt,
+            },
+            classId: updatedSession.class_id,
+        });
         return res.json(updatedSession);
     }
     catch (error) {
@@ -1108,6 +1277,22 @@ export const manualSessionCheckIn = async (req, res) => {
                         });
                     }
                 }
+            });
+            await writeActivityLog(req, {
+                action: 'ATTENDANCE_MANUAL_REMOVE',
+                category: 'ATTENDANCE',
+                targetType: 'Attendance',
+                targetId: existingAttendance.id,
+                summary: `Xoa diem danh thu cong cua ${student.name} khoi phien "${session.title}"`,
+                details: {
+                    sessionId: session.id,
+                    sessionTitle: session.title,
+                    previousStatus: existingAttendance.status,
+                    drlCriterionId: session.drl_criterion_id,
+                    drlPoints: session.drl_points,
+                },
+                studentId: student.id,
+                classId: student.class_id,
             });
             return res.json({ message: 'Da xoa diem danh' });
         }
@@ -1207,6 +1392,22 @@ export const manualSessionCheckIn = async (req, res) => {
                     }
                 }
             });
+            await writeActivityLog(req, {
+                action: 'ATTENDANCE_MANUAL_CHECK_IN',
+                category: 'ATTENDANCE',
+                targetType: 'AttendanceSession',
+                targetId: session.id,
+                summary: `Diem danh thu cong cho ${student.name} vao phien "${session.title}"`,
+                details: {
+                    sessionId: session.id,
+                    sessionTitle: session.title,
+                    status: 'present',
+                    drlCriterionId: session.drl_criterion_id,
+                    drlPoints: session.drl_points,
+                },
+                studentId: student.id,
+                classId: student.class_id,
+            });
             return res.json({ message: 'Da diem danh thu cong' });
         }
     }
@@ -1258,12 +1459,18 @@ export const exportSessionAttendanceExcel = async (req, res) => {
                 include: { student: true },
                 orderBy: [{ date: 'asc' }],
             });
-            students = attendances.map((a) => a.student);
+            // Filter out null student objects and deduplicate students safely
+            const uniqueStudentsMap = new Map();
+            attendances.forEach((a) => {
+                if (a.student) {
+                    uniqueStudentsMap.set(a.student.id, a.student);
+                }
+            });
+            students = Array.from(uniqueStudentsMap.values());
         }
         const attendanceMap = new Map(attendances.map((att) => [att.student_id, att]));
-        const ExcelJS = await import('exceljs');
-        const ExcelJSModule = (ExcelJS.default || ExcelJS);
-        const workbook = new ExcelJSModule.Workbook();
+        const ExcelJS = await getExcelJS();
+        const workbook = new ExcelJS.Workbook();
         const sheet = workbook.addWorksheet('Danh Sách Điểm Danh');
         sheet.columns = [
             { header: 'STT', key: 'stt', width: 8 },
@@ -1285,11 +1492,11 @@ export const exportSessionAttendanceExcel = async (req, res) => {
             const attendance = attendanceMap.get(student.id);
             sheet.addRow({
                 stt: index + 1,
-                student_code: student.student_code,
-                name: student.name,
-                class_id: student.class_id,
+                student_code: student.student_code || 'N/A',
+                name: student.name || 'N/A',
+                class_id: student.class_id || 'N/A',
                 status: attendance ? 'Đã điểm danh' : 'Chưa điểm danh',
-                time: attendance ? new Date(attendance.date).toLocaleString('vi-VN') : '--',
+                time: (attendance && attendance.date) ? new Date(attendance.date).toLocaleString('vi-VN') : '--',
                 ipAddress: attendance ? (attendance.ipAddress === 'manual' ? 'Thủ công' : attendance.ipAddress || 'N/A') : '--',
                 verifiedLocation: attendance
                     ? attendance.verifiedLocation
@@ -1299,10 +1506,7 @@ export const exportSessionAttendanceExcel = async (req, res) => {
             });
         });
         const safeTitle = session.title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        res.setHeader('Content-Disposition', `attachment; filename="diem-danh-${safeTitle || session.id}.xlsx"`);
-        await workbook.xlsx.write(res);
-        res.end();
+        await sendWorkbookAsXlsx(res, workbook, `diem-danh-${safeTitle || session.id}.xlsx`);
     }
     catch (error) {
         console.error('Error exporting attendance session:', error);

@@ -6,6 +6,7 @@ const PLACEHOLDER_VALUES = new Set([
     'your-r2-access-key-id',
     'your-r2-secret-access-key',
     'your-r2-bucket-name',
+    'your-r2-endpoint',
 ]);
 const normalizeEnvValue = (value) => String(value || '').trim().replace(/^['"]|['"]$/g, '');
 const hasRealValue = (value) => {
@@ -23,7 +24,12 @@ const getR2Config = () => {
     const accessKeyId = normalizeEnvValue(process.env.R2_ACCESS_KEY_ID);
     const secretAccessKey = normalizeEnvValue(process.env.R2_SECRET_ACCESS_KEY);
     const bucket = normalizeEnvValue(process.env.R2_BUCKET);
-    if (!hasRealValue(accountId) || !hasRealValue(accessKeyId) || !hasRealValue(secretAccessKey) || !hasRealValue(bucket)) {
+    const endpoint = normalizeEnvValue(process.env.R2_ENDPOINT);
+    if (!hasRealValue(accountId) ||
+        !hasRealValue(accessKeyId) ||
+        !hasRealValue(secretAccessKey) ||
+        !hasRealValue(bucket) ||
+        !hasRealValue(endpoint)) {
         throw new Error('Cloudflare R2 chua duoc cau hinh day du.');
     }
     return {
@@ -31,6 +37,7 @@ const getR2Config = () => {
         accessKeyId,
         secretAccessKey,
         bucket,
+        endpoint,
         region: normalizeEnvValue(process.env.R2_REGION) || DEFAULT_REGION,
         evidencePrefix: (normalizeEnvValue(process.env.R2_EVIDENCE_PREFIX) || DEFAULT_EVIDENCE_PREFIX).replace(/^\/+|\/+$/g, ''),
     };
@@ -38,14 +45,14 @@ const getR2Config = () => {
 export const isR2Configured = () => hasRealValue(process.env.R2_ACCOUNT_ID) &&
     hasRealValue(process.env.R2_ACCESS_KEY_ID) &&
     hasRealValue(process.env.R2_SECRET_ACCESS_KEY) &&
-    hasRealValue(process.env.R2_BUCKET);
+    hasRealValue(process.env.R2_BUCKET) &&
+    hasRealValue(process.env.R2_ENDPOINT);
 const createR2Client = () => {
     const config = getR2Config();
-    const endpoint = `https://${config.accountId}.r2.cloudflarestorage.com`;
     return {
         client: new S3Client({
             region: config.region,
-            endpoint,
+            endpoint: config.endpoint,
             forcePathStyle: true,
             credentials: {
                 accessKeyId: config.accessKeyId,

@@ -13,6 +13,9 @@ import trainingRoutes from './routes/training.routes.js';
 import attendanceRoutes from './routes/attendance.routes.js';
 import bchRoutes from './routes/bch.routes.js';
 import eventRoutes from './routes/event.routes.js';
+import supportRoutes from './routes/support.routes.js';
+import chatbotRoutes from './routes/chatbot.routes.js';
+import activityLogRoutes from './routes/activity-log.routes.js';
 import { getAllowedOrigins } from './utils/security.js';
 import { securityHeadersMiddleware } from './middleware/security-headers.middleware.js';
 import { csrfMiddleware } from './middleware/csrf.middleware.js';
@@ -61,7 +64,7 @@ app.use(cors({
     origin: resolveCorsOrigin,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'x-csrf-token'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'x-csrf-token', 'X-Device-Id', 'x-device-id'],
 }));
 app.use(securityHeadersMiddleware);
 app.use(express.json({ limit: '1mb' }));
@@ -77,6 +80,9 @@ app.use('/api/semesters', semesterRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/bch', bchRoutes);
 app.use('/api/events', eventRoutes);
+app.use('/api/support', supportRoutes);
+app.use('/api/chatbot', chatbotRoutes);
+app.use('/api/activity-logs', activityLogRoutes);
 // Health check
 app.get('/', (req, res) => {
     res.send('Student Management System API is running');

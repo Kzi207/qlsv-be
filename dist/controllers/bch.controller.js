@@ -1,5 +1,6 @@
 import prisma from '../utils/prisma.js';
 import bcrypt from 'bcryptjs';
+import { getExcelJS, sendWorkbookAsXlsx } from '../utils/excel.js';
 export const createBchAccount = async (req, res) => {
     const { username, password, name, email, phone, class_id } = req.body;
     try {
@@ -121,9 +122,8 @@ export const exportBchAssignments = async (req, res) => {
             where: { classId: String(class_id) },
             include: { bchUser: true }
         });
-        const ExcelJS = await import('exceljs');
-        const ExcelJSModule = (ExcelJS.default || ExcelJS);
-        const workbook = new ExcelJSModule.Workbook();
+        const ExcelJS = await getExcelJS();
+        const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Danh sách phân công');
         worksheet.columns = [
             { header: 'STT', key: 'stt', width: 8 },
@@ -153,10 +153,7 @@ export const exportBchAssignments = async (req, res) => {
         worksheet.addRow([]);
         const noteRow = worksheet.addRow(['Ghi chú: Những sinh viên bỏ trống phần BCH Phân công sẽ do toàn bộ BCH lớp cùng chấm.']);
         noteRow.font = { italic: true, color: { argb: 'FF6B7280' } };
-        const buffer = await workbook.xlsx.writeBuffer();
-        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        res.setHeader('Content-Disposition', `attachment; filename="phan-cong-${class_id}.xlsx"`);
-        res.status(200).send(buffer);
+        await sendWorkbookAsXlsx(res, workbook, `phan-cong-${class_id}.xlsx`);
     }
     catch (error) {
         console.error(error);

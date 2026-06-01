@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import type { AuthRequest } from '../types/index.js';
+export declare const resolveMapCoordinates: (req: AuthRequest, res: Response) => Promise<Response<any, Record<string, any>>>;
 export declare const checkAttendance: (req: Request, res: Response) => Promise<Response<any, Record<string, any>>>;
 export declare const getAttendanceByDate: (req: Request, res: Response) => Promise<Response<any, Record<string, any>>>;
 export declare const getAttendanceByStudent: (req: Request, res: Response) => Promise<Response<any, Record<string, any>>>;

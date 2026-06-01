@@ -1,4 +1,5 @@
 import multer from 'multer';
+import sharp from 'sharp';
 import fs from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
@@ -115,6 +116,50 @@ const fileBaseWithoutExt = (filePath) => {
 };
 const getExtensionForFile = (file) => {
     return resolveEvidenceExtension(file);
+};
+const compressImageTo720p = async (file, extension) => {
+    const mimetype = String(file.mimetype || '').toLowerCase();
+    if (!mimetype.startsWith('image/') || extension === '.gif') {
+        return {
+            buffer: file.buffer,
+            mimetype: file.mimetype,
+            size: file.size,
+        };
+    }
+    const transformer = sharp(file.buffer)
+        .rotate()
+        .resize({
+        width: 1280,
+        height: 720,
+        fit: 'inside',
+        withoutEnlargement: true,
+    });
+    let buffer;
+    let outputMimeType = file.mimetype;
+    if (extension === '.jpg' || extension === '.jpeg') {
+        buffer = await transformer.jpeg({ quality: 80, mozjpeg: true }).toBuffer();
+        outputMimeType = 'image/jpeg';
+    }
+    else if (extension === '.png') {
+        buffer = await transformer.png({ compressionLevel: 9, adaptiveFiltering: true }).toBuffer();
+        outputMimeType = 'image/png';
+    }
+    else if (extension === '.webp') {
+        buffer = await transformer.webp({ quality: 80 }).toBuffer();
+        outputMimeType = 'image/webp';
+    }
+    else {
+        return {
+            buffer: file.buffer,
+            mimetype: file.mimetype,
+            size: file.size,
+        };
+    }
+    return {
+        buffer,
+        mimetype: outputMimeType,
+        size: buffer.length,
+    };
 };
 const decodeEvidenceKey = (rawKey) => {
     try {
@@ -317,9 +362,10 @@ export const uploadEvidence = (req, res) => {
                 const index = startIndex + offset;
                 const extension = getExtensionForFile(file);
                 const finalFileName = `${studentCode}-${criterionToken}-${index}${extension}`;
+                const payload = await compressImageTo720p(file, extension);
                 return useR2
-                    ? saveToR2(file, classFolder, studentFolder, finalFileName)
-                    : saveLocally(file, classFolder, studentFolder, finalFileName);
+                    ? saveToR2(payload, classFolder, studentFolder, finalFileName)
+                    : saveLocally(payload, classFolder, studentFolder, finalFileName);
             }));
             const updatedScore = await upsertEvidenceToTrainingScore({
                 studentId,

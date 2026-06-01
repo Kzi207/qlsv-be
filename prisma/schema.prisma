@@ -21,6 +21,7 @@ model User {
   studentId   Int?     @unique
   student     Student? @relation(fields: [studentId], references: [id])
   assignments BchAssignment[]
+  activityLogs ActivityLog[]
 }
 
 model Class {
@@ -195,4 +196,55 @@ model EventRegistration {
   @@index([eventId])
   @@index([studentCode])
   @@unique([eventId, studentCode])
+}
+
+model SupportRequest {
+  id         Int                  @id @default(autoincrement())
+  fullName   String
+  email      String?
+  phone      String?
+  subject    String
+  message    String
+  status     SupportRequestStatus @default(NEW)
+  sourcePage String?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+
+  @@index([status, createdAt])
+}
+
+enum SupportRequestStatus {
+  NEW
+  IN_PROGRESS
+  RESOLVED
+}
+
+model ActivityLog {
+  id         Int      @id @default(autoincrement())
+  action     String
+  category   String
+  targetType String?
+  targetId   String?
+  summary    String
+  details    Json?
+  userId     Int?
+  username   String?
+  userName   String?
+  role       String?
+  studentId  Int?
+  classId    String?
+  ipAddress  String?
+  deviceId   String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([action])
+  @@index([category])
+  @@index([userId])
+  @@index([studentId])
+  @@index([classId])
 }

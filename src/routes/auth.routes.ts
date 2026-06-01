@@ -7,8 +7,12 @@ const router = Router();
 const loginRateLimiter = createRateLimitMiddleware({
   keyPrefix: 'auth-login',
   windowMs: 15 * 60 * 1000,
-  max: 8,
+  max: 12,
   message: 'Too many login attempts. Please try again in a few minutes.',
+  key: (req, clientKey) => {
+    const username = String(req.body?.username || '').trim().toLowerCase();
+    return `${clientKey}:${username || 'anonymous'}`;
+  },
 });
 
 router.post('/login', loginRateLimiter, login);

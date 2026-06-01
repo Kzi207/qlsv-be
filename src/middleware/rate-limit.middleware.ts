@@ -5,6 +5,7 @@ type RateLimitOptions = {
   windowMs: number;
   max: number;
   message?: string;
+  key?: (req: Request, clientKey: string) => string;
   skip?: (req: Request) => boolean;
 };
 
@@ -74,7 +75,9 @@ export const createRateLimitMiddleware = (options: RateLimitOptions) => {
     const now = Date.now();
     pruneAndCapBuckets(now);
 
-    const key = `${keyPrefix}:${getClientKey(req)}`;
+    const clientKey = getClientKey(req);
+    const keySuffix = options.key?.(req, clientKey) || clientKey;
+    const key = `${keyPrefix}:${keySuffix}`;
     const existing = buckets.get(key);
 
     if (!existing || existing.resetAt <= now) {

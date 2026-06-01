@@ -2,58 +2,97 @@ import crypto from 'crypto';
 export const AUTH_COOKIE_NAME = 'qlsv_session';
 export const CSRF_COOKIE_NAME = 'qlsv_token';
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const LOCALHOSTS = new Set(['localhost', '127.0.0.1']);
+const splitEnvList = (value) => String(value || '')
+    .replace(/['"]/g, '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
 export const getAllowedOrigins = () => {
-    const configuredOrigins = process.env.FRONTEND_ORIGIN
-        ?.replace(/['"]/g, '')
-        .split(',')
-        .map((origin) => origin.trim())
-        .filter(Boolean);
-    if (configuredOrigins && configuredOrigins.length > 0) {
-        return configuredOrigins;
-    }
-    return ['http://localhost:5173'];
+    return splitEnvList(process.env.FRONTEND_ORIGIN);
 };
-const getSameSite = () => {
-    if (process.env.COOKIE_SAME_SITE === 'none')
+const getHostname = (hostOrOrigin) => {
+    try {
+        return hostOrOrigin.includes('://')
+            ? new URL(hostOrOrigin).hostname.toLowerCase()
+            : (hostOrOrigin.split(':')[0] || '').toLowerCase();
+    }
+    catch {
+        return '';
+    }
+};
+const isLocalhost = (hostname) => LOCALHOSTS.has(hostname) || /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname);
+const getSiteKey = (hostname) => {
+    const parts = hostname.split('.').filter(Boolean);
+    if (parts.length <= 2)
+        return hostname;
+    return parts.slice(-2).join('.');
+};
+const isCrossSiteRequest = (req) => {
+    if (!req)
+        return false;
+    const originHeader = req.get('origin') || '';
+    if (!originHeader)
+        return false;
+    const requestHost = getHostname(req.get('host') || '');
+    const originHost = getHostname(originHeader);
+    if (!requestHost || !originHost)
+        return false;
+    if (isLocalhost(requestHost) || isLocalhost(originHost))
+        return false;
+    return getSiteKey(requestHost) !== getSiteKey(originHost);
+};
+const getSameSite = (req) => {
+    const hostname = getHostname(req?.get('host') || '');
+    if (hostname && isLocalhost(hostname)) {
+        return 'lax';
+    }
+    const configuredSameSite = String(process.env.COOKIE_SAME_SITE || '').toLowerCase();
+    if (configuredSameSite === 'none')
         return 'none';
-    if (process.env.COOKIE_SAME_SITE === 'strict')
+    if (configuredSameSite === 'strict')
         return 'strict';
+    if (isCrossSiteRequest(req)) {
+        return 'none';
+    }
     return 'lax';
 };
 const normalizeDomain = (domain) => domain.replace(/^\./, '').toLowerCase();
 const isHostMatchingCookieDomain = (hostOrOrigin, configuredDomain) => {
-    try {
-        const host = hostOrOrigin.includes('://')
-            ? new URL(hostOrOrigin).hostname.toLowerCase()
-            : (hostOrOrigin.split(':')[0] || '').toLowerCase();
-        const target = normalizeDomain(configuredDomain);
-        return host === target || host.endsWith(`.${target}`);
-    }
-    catch {
-        return false;
-    }
+    const host = getHostname(hostOrOrigin);
+    const target = normalizeDomain(configuredDomain);
+    return host === target || host.endsWith(`.${target}`);
 };
 const getCookieDomain = (req) => {
     const hostHeader = req?.get('host') || '';
     const hostname = (hostHeader.split(':')[0] ?? '').toLowerCase();
     // Don't set a domain for localhost or IP addresses to ensure cookies work correctly
-    if (hostname === 'localhost' || hostname === '127.0.0.1' || /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname)) {
+    if (isLocalhost(hostname)) {
         return undefined;
     }
-    const configuredDomain = process.env.COOKIE_DOMAIN;
-    if (!configuredDomain)
+    const configuredDomains = splitEnvList(process.env.COOKIE_DOMAIN);
+    if (configuredDomains.length === 0)
         return undefined;
     if (!req)
-        return configuredDomain;
+        return configuredDomains[0];
     const originHeader = req.get('origin') || '';
-    const matchedHost = hostHeader && isHostMatchingCookieDomain(hostHeader, configuredDomain);
-    const matchedOrigin = originHeader && isHostMatchingCookieDomain(originHeader, configuredDomain);
-    if (matchedHost || matchedOrigin) {
-        return configuredDomain;
+    const matchedDomain = configuredDomains.find((domain) => {
+        const matchedHost = hostHeader && isHostMatchingCookieDomain(hostHeader, domain);
+        const matchedOrigin = originHeader && isHostMatchingCookieDomain(originHeader, domain);
+        return matchedHost || matchedOrigin;
+    });
+    if (matchedDomain) {
+        return matchedDomain;
     }
     return undefined;
 };
 const shouldUseSecureCookies = (req) => {
+    if (req) {
+        const hostname = getHostname(req.get('host') || '');
+        if (isLocalhost(hostname)) {
+            return false;
+        }
+    }
     const forcedSecure = process.env.COOKIE_SECURE === 'true';
     if (forcedSecure)
         return true;
@@ -69,7 +108,7 @@ const shouldUseSecureCookies = (req) => {
 };
 export const getAuthCookieOptions = (req) => {
     const isSecure = shouldUseSecureCookies(req);
-    const sameSite = getSameSite();
+    const sameSite = getSameSite(req);
     // Force secure if sameSite is none, as browsers require it
     const finalSecure = isSecure || sameSite === 'none';
     const normalizedSameSite = sameSite === 'none' && !finalSecure ? 'lax' : sameSite;
@@ -84,7 +123,7 @@ export const getAuthCookieOptions = (req) => {
 };
 export const getCsrfCookieOptions = (req) => {
     const isSecure = shouldUseSecureCookies(req);
-    const sameSite = getSameSite();
+    const sameSite = getSameSite(req);
     // Force secure if sameSite is none, as browsers require it
     const finalSecure = isSecure || sameSite === 'none';
     const normalizedSameSite = sameSite === 'none' && !finalSecure ? 'lax' : sameSite;
@@ -120,7 +159,7 @@ export const clearAuthCookies = (req, res) => {
             maxAge: 0,
         };
     };
-    // 1. Clear with configured domain (e.g., .kzii.site)
+    // 1. Clear with configured domain.
     res.cookie(AUTH_COOKIE_NAME, '', deleteOptions(authOptions));
     res.cookie(CSRF_COOKIE_NAME, '', deleteOptions(csrfOptions));
     // 2. Clear without domain (host-only cookie)

@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import prisma from '../utils/prisma.js';
 import { clearAuthCookies, createCsrfToken, setAuthCookies, setCsrfCookie, getCookieValue, CSRF_COOKIE_NAME } from '../utils/security.js';
 import { getJwtSecret } from '../utils/env.js';
+import { writeActivityLog } from '../utils/activity-log.js';
 const DUMMY_PASSWORD_HASH = bcrypt.hashSync('invalid-password-for-timing-defense', 10);
 const applyNoStoreHeaders = (res) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
@@ -50,10 +51,31 @@ export const login = async (req, res) => {
         });
         if (!user) {
             await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
+            await writeActivityLog(req, {
+                action: 'LOGIN_FAILED',
+                category: 'AUTH',
+                summary: `Dang nhap that bai cho tai khoan "${username}"`,
+                details: { username },
+                username,
+            });
             return res.status(401).json({ message: 'Invalid credentials' });
         }
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) {
+            await writeActivityLog(req, {
+                action: 'LOGIN_FAILED',
+                category: 'AUTH',
+                targetType: 'User',
+                targetId: user.id,
+                summary: `Dang nhap that bai cho tai khoan "${username}"`,
+                details: { username, userId: user.id },
+                userId: user.id,
+                username: user.username,
+                userName: user.name,
+                role: user.role,
+                studentId: user.studentId,
+                classId: user.class_id,
+            });
             return res.status(401).json({ message: 'Invalid credentials' });
         }
         const token = jwt.sign({
@@ -65,6 +87,20 @@ export const login = async (req, res) => {
         }, getJwtSecret(), { expiresIn: '24h' });
         const csrfToken = createCsrfToken();
         setAuthCookies(req, res, token, csrfToken);
+        await writeActivityLog(req, {
+            action: 'LOGIN_SUCCESS',
+            category: 'AUTH',
+            targetType: 'User',
+            targetId: user.id,
+            summary: `${user.name || user.username} dang nhap thanh cong`,
+            details: { username: user.username },
+            userId: user.id,
+            username: user.username,
+            userName: user.name,
+            role: user.role,
+            studentId: user.studentId,
+            classId: user.class_id,
+        });
         res.json({
             user: toSafeUser(user),
             csrfToken,
@@ -134,6 +170,17 @@ export const updateProfile = async (req, res) => {
                 email: emailValue || null,
             },
         });
+        await writeActivityLog(req, {
+            action: 'PROFILE_UPDATE',
+            category: 'AUTH',
+            targetType: 'User',
+            targetId: updatedUser.id,
+            summary: `${updatedUser.name || updatedUser.username} cap nhat ho so ca nhan`,
+            details: { name: updatedUser.name, email: updatedUser.email },
+            userName: updatedUser.name,
+            studentId: updatedUser.studentId,
+            classId: updatedUser.class_id,
+        });
         return res.json(toSafeUser(updatedUser));
     }
     catch (error) {
@@ -168,6 +215,17 @@ export const changePassword = async (req, res) => {
         await prisma.user.update({
             where: { id: user.id },
             data: { password: hashedPassword },
+        });
+        await writeActivityLog(req, {
+            action: 'PASSWORD_CHANGE',
+            category: 'AUTH',
+            targetType: 'User',
+            targetId: user.id,
+            summary: `${user.name || user.username} doi mat khau`,
+            details: { username: user.username },
+            userName: user.name,
+            studentId: user.studentId,
+            classId: user.class_id,
         });
         return res.json({ message: 'Password updated successfully' });
     }

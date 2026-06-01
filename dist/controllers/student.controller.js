@@ -1,5 +1,16 @@
 import prisma from '../utils/prisma.js';
 import bcrypt from 'bcryptjs';
+import { getExcelJS, sendWorkbookAsXlsx } from '../utils/excel.js';
+const IMPORT_BATCH_SIZE = 25;
+const runInBatches = async (items, batchSize, worker) => {
+    const results = [];
+    for (let index = 0; index < items.length; index += batchSize) {
+        const batch = items.slice(index, index + batchSize);
+        const batchResults = await Promise.all(batch.map(worker));
+        results.push(...batchResults);
+    }
+    return results;
+};
 const removeAccents = (str) => {
     return str
         .normalize('NFD')
@@ -151,9 +162,8 @@ export const importStudentsExcel = async (req, res) => {
         return res.status(400).json({ message: 'Vui lòng chọn file excel' });
     }
     try {
-        const ExcelJS = await import('exceljs');
-        const ExcelJSModule = (ExcelJS.default || ExcelJS);
-        const workbook = new ExcelJSModule.Workbook();
+        const ExcelJS = await getExcelJS();
+        const workbook = new ExcelJS.Workbook();
         await workbook.xlsx.load(req.file.buffer);
         const worksheet = workbook.worksheets[0];
         if (!worksheet) {
@@ -259,67 +269,62 @@ export const importStudentsExcel = async (req, res) => {
                 classGroups[cid] = [];
             classGroups[cid]?.push(s);
         });
-        // Prepare all operations
-        const operations = [];
+        const importJobs = [];
         let lastError = '';
         for (const classStudents of Object.values(classGroups)) {
             for (let i = 0; i < classStudents.length; i++) {
                 const student = classStudents[i];
                 const orderNumber = (student.stt !== null && !isNaN(student.stt)) ? student.stt : i + 1;
-                const op = (async () => {
-                    try {
-                        // Đảm bảo lớp tồn tại trước khi thêm sinh viên (Tránh lỗi Foreign Key)
-                        if (student.class_id && student.class_id !== 'Chưa xếp lớp') {
-                            await prisma.class.upsert({
-                                where: { id: student.class_id },
-                                update: {},
-                                create: {
-                                    id: student.class_id,
-                                    name: `Lớp ${student.class_id}`
-                                }
-                            });
-                        }
-                        const studentRecord = await prisma.student.upsert({
-                            where: { student_code: student.student_code },
-                            update: {
-                                name: student.name,
-                                email: student.email,
-                                class_id: student.class_id,
-                                order_number: orderNumber
-                            },
-                            create: {
-                                name: student.name,
-                                student_code: student.student_code,
-                                email: student.email,
-                                class_id: student.class_id,
-                                order_number: orderNumber
-                            },
-                            include: { user: true }
-                        });
-                        if (!studentRecord.user) {
-                            await prisma.user.create({
-                                data: {
-                                    username: student.student_code,
-                                    password: defaultHashedPassword,
-                                    name: student.name,
-                                    role: 'STUDENT',
-                                    studentId: studentRecord.id
-                                }
-                            });
-                        }
-                        return true;
-                    }
-                    catch (e) {
-                        console.error(`Lỗi khi nhập sinh viên ${student.student_code}:`, e);
-                        lastError = e.message || 'Lỗi DB';
-                        return false;
-                    }
-                })();
-                operations.push(op);
+                importJobs.push({ student, orderNumber });
             }
         }
-        // Run all operations and count successes
-        const results = await Promise.all(operations);
+        const results = await runInBatches(importJobs, IMPORT_BATCH_SIZE, async ({ student, orderNumber }) => {
+            try {
+                if (student.class_id && student.class_id !== 'Chưa xếp lớp') {
+                    await prisma.class.upsert({
+                        where: { name: student.class_id },
+                        update: {},
+                        create: {
+                            name: student.class_id
+                        }
+                    });
+                }
+                const studentRecord = await prisma.student.upsert({
+                    where: { student_code: student.student_code },
+                    update: {
+                        name: student.name,
+                        email: student.email,
+                        class_id: student.class_id,
+                        order_number: orderNumber
+                    },
+                    create: {
+                        name: student.name,
+                        student_code: student.student_code,
+                        email: student.email,
+                        class_id: student.class_id,
+                        order_number: orderNumber
+                    },
+                    include: { user: true }
+                });
+                if (!studentRecord.user) {
+                    await prisma.user.create({
+                        data: {
+                            username: student.student_code,
+                            password: defaultHashedPassword,
+                            name: student.name,
+                            role: 'STUDENT',
+                            studentId: studentRecord.id
+                        }
+                    });
+                }
+                return true;
+            }
+            catch (e) {
+                console.error(`Lỗi khi nhập sinh viên ${student.student_code}:`, e);
+                lastError = e.message || 'Lỗi DB';
+                return false;
+            }
+        });
         count = results.filter(r => r === true).length;
         if (count === 0 && students.length > 0) {
             return res.status(500).json({
@@ -336,9 +341,8 @@ export const importStudentsExcel = async (req, res) => {
 };
 export const getStudentTemplate = async (req, res) => {
     try {
-        const ExcelJS = await import('exceljs');
-        const ExcelJSModule = (ExcelJS.default || ExcelJS);
-        const workbook = new ExcelJSModule.Workbook();
+        const ExcelJS = await getExcelJS();
+        const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Sinh Viên Mẫu');
         worksheet.columns = [
             { header: 'STT', key: 'stt', width: 10 },
@@ -362,10 +366,7 @@ export const getStudentTemplate = async (req, res) => {
             email: 'a.nv.b2100001@student.abc.edu.vn',
             class_id: 'CNTT1'
         });
-        const buffer = await workbook.xlsx.writeBuffer();
-        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        res.setHeader('Content-Disposition', 'attachment; filename="mau-nhap-sinh-vien.xlsx"');
-        res.status(200).send(buffer);
+        await sendWorkbookAsXlsx(res, workbook, 'mau-nhap-sinh-vien.xlsx');
     }
     catch (error) {
         console.error(error);
@@ -458,9 +459,8 @@ export const exportStudentAccounts = async (req, res) => {
                 { order_number: 'asc' }
             ]
         });
-        const ExcelJS = await import('exceljs');
-        const ExcelJSModule = (ExcelJS.default || ExcelJS);
-        const workbook = new ExcelJSModule.Workbook();
+        const ExcelJS = await getExcelJS();
+        const workbook = new ExcelJS.Workbook();
         const sheet = workbook.addWorksheet('Tài khoản sinh viên');
         sheet.columns = [
             { header: 'Lớp', key: 'class', width: 15 },
@@ -484,10 +484,7 @@ export const exportStudentAccounts = async (req, res) => {
                 password: '1234'
             });
         });
-        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        res.setHeader('Content-Disposition', `attachment; filename="tai-khoan-sinh-vien-${class_id || 'tat-ca'}.xlsx"`);
-        await workbook.xlsx.write(res);
-        res.end();
+        await sendWorkbookAsXlsx(res, workbook, `tai-khoan-sinh-vien-${class_id || 'tat-ca'}.xlsx`);
     }
     catch (error) {
         console.error(error);
@@ -540,6 +537,147 @@ export const getStudentStats = async (req, res) => {
     catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Lỗi khi lấy thống kê sinh viên' });
+    }
+};
+export const getDashboardStats = async (req, res) => {
+    const role = String(req.user?.role || '').toUpperCase();
+    const classId = role === 'BCH' ? String(req.user?.class_id || '').trim() : '';
+    const studentWhere = classId ? { class_id: classId } : {};
+    const trainingWhere = classId ? { student: { class_id: classId } } : {};
+    const sessionWhere = {
+        isActive: true,
+        ...(classId ? { class_id: classId } : {}),
+    };
+    try {
+        const lastSevenDays = Array.from({ length: 7 }, (_, index) => {
+            const date = new Date();
+            date.setDate(date.getDate() - (6 - index));
+            date.setHours(0, 0, 0, 0);
+            const nextDate = new Date(date);
+            nextDate.setDate(nextDate.getDate() + 1);
+            return { date, nextDate, label: `${date.getDate()}/${date.getMonth() + 1}` };
+        });
+        const [totalStudents, pendingDRL, activeSessionsCount, approvedAggregate, activeSessions, pendingScores, semesters, chartCounts,] = await Promise.all([
+            prisma.student.count({ where: studentWhere }),
+            prisma.trainingScore.count({
+                where: {
+                    ...trainingWhere,
+                    status: 'PENDING',
+                },
+            }),
+            prisma.attendanceSession.count({ where: sessionWhere }),
+            prisma.trainingScore.aggregate({
+                where: {
+                    ...trainingWhere,
+                    status: 'APPROVED',
+                },
+                _avg: {
+                    total: true,
+                    admin_total: true,
+                },
+            }),
+            prisma.attendanceSession.findMany({
+                where: sessionWhere,
+                select: {
+                    id: true,
+                    title: true,
+                    subject: true,
+                    session_type: true,
+                    class_id: true,
+                    qrToken: true,
+                    createdAt: true,
+                },
+                orderBy: { createdAt: 'desc' },
+                take: 3,
+            }),
+            prisma.trainingScore.findMany({
+                where: {
+                    ...trainingWhere,
+                    status: 'PENDING',
+                },
+                select: {
+                    id: true,
+                    status: true,
+                    student: {
+                        select: {
+                            name: true,
+                            student_code: true,
+                            class_id: true,
+                        },
+                    },
+                },
+                orderBy: { updatedAt: 'desc' },
+                take: 5,
+            }),
+            prisma.semester.findMany({
+                select: { name: true },
+                orderBy: [{ startDate: 'desc' }, { name: 'desc' }],
+                take: 1,
+            }),
+            Promise.all(lastSevenDays.map((item) => prisma.attendanceSession.count({
+                where: {
+                    ...(classId ? { class_id: classId } : {}),
+                    sessionDate: {
+                        gte: item.date,
+                        lt: item.nextDate,
+                    },
+                },
+            }))),
+        ]);
+        const avgTotal = approvedAggregate._avg.admin_total ?? approvedAggregate._avg.total;
+        const activities = [
+            ...activeSessions.map((session) => ({
+                id: `session-${session.id}`,
+                type: 'attendance',
+                title: 'Phiên điểm danh mới',
+                subtitle: `${session.title || session.subject || 'Phiên'} - ${session.class_id || 'Hoạt động chung'}`,
+                time: 'Mới',
+                color: 'bg-emerald-500',
+            })),
+            ...pendingScores.slice(0, 3).map((score) => ({
+                id: `drl-${score.id}`,
+                type: 'drl',
+                title: 'Duyệt phiếu DRL',
+                subtitle: `${score.student?.name || 'Sinh viên'} - ${score.student?.student_code || score.id}`,
+                time: 'Chờ duyệt',
+                color: 'bg-amber-500',
+            })),
+        ].slice(0, 5);
+        const notifications = [
+            ...activeSessions.map((session) => ({
+                id: `notif-session-${session.id}`,
+                title: `${session.session_type === 'QR_CLASS' ? 'Phiên điểm danh học phần' : 'Phiên hoạt động'} ${session.title || ''}`.trim(),
+                badge: 'Đang mở',
+                badgeColor: 'bg-emerald-100 text-emerald-700',
+                time: 'Hôm nay',
+            })),
+            ...pendingScores.slice(0, 2).map((score) => ({
+                id: `notif-drl-${score.id}`,
+                title: `${score.student?.name || `DRL_${score.id}`} - Chờ duyệt`,
+                badge: 'Chờ duyệt',
+                badgeColor: 'bg-amber-100 text-amber-700',
+                time: 'Gần đây',
+            })),
+        ].slice(0, 5);
+        return res.json({
+            stats: {
+                totalStudents,
+                pendingDRL,
+                activeSessions: activeSessionsCount,
+                avgDRL: avgTotal === null || avgTotal === undefined ? null : Math.round(Number(avgTotal) * 10) / 10,
+            },
+            activeSemester: semesters[0]?.name || '',
+            activities,
+            notifications,
+            chartData: lastSevenDays.map((item, index) => ({
+                date: item.label,
+                value: chartCounts[index] || 0,
+            })),
+        });
+    }
+    catch (error) {
+        console.error('getDashboardStats error:', error);
+        res.status(500).json({ message: 'Server error' });
     }
 };
 //# sourceMappingURL=student.controller.js.map

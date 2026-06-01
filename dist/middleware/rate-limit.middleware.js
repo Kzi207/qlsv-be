@@ -50,7 +50,9 @@ export const createRateLimitMiddleware = (options) => {
         }
         const now = Date.now();
         pruneAndCapBuckets(now);
-        const key = `${keyPrefix}:${getClientKey(req)}`;
+        const clientKey = getClientKey(req);
+        const keySuffix = options.key?.(req, clientKey) || clientKey;
+        const key = `${keyPrefix}:${keySuffix}`;
         const existing = buckets.get(key);
         if (!existing || existing.resetAt <= now) {
             const resetAt = now + options.windowMs;

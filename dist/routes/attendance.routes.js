@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { checkAttendance, getAttendanceByDate, getAttendanceByStudent, createAttendanceSession, getAttendanceSessions, getActiveSessions, qrCheckIn, getSessionAttendees, getSessionSummary, endAttendanceSession, manualSessionCheckIn, exportSessionAttendanceExcel, } from '../controllers/attendance.controller.js';
+import { checkAttendance, getAttendanceByDate, getAttendanceByStudent, createAttendanceSession, getAttendanceSessions, getActiveSessions, qrCheckIn, getSessionAttendees, getSessionSummary, endAttendanceSession, manualSessionCheckIn, exportSessionAttendanceExcel, resolveMapCoordinates, } from '../controllers/attendance.controller.js';
 import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware.js';
 import { createRateLimitMiddleware } from '../middleware/rate-limit.middleware.js';
 const router = Router();
@@ -19,6 +19,7 @@ router.use(authMiddleware);
 router.get('/sessions', roleMiddleware(['ADMIN', 'BCH']), getAttendanceSessions);
 router.get('/sessions/active', activeSessionsRateLimiter, getActiveSessions);
 router.post('/qr-check-in', qrCheckInRateLimiter, qrCheckIn);
+router.post('/maps/resolve', roleMiddleware(['ADMIN', 'BCH']), resolveMapCoordinates);
 // Admin & BCH routes
 router.post('/session', roleMiddleware(['ADMIN', 'BCH']), createAttendanceSession);
 router.patch('/sessions/:sessionId/end', roleMiddleware(['ADMIN', 'BCH']), endAttendanceSession);
